@@ -328,6 +328,19 @@ class AITerminal:
 def main() -> None:
     """CLI 入口。"""
     import argparse
+    import warnings
+
+    # Windows 下强制 UTF-8 输出，避免中文乱码
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    # 抑制 asyncio 子进程清理时的 ResourceWarning（Windows 常见）
+    warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
+    warnings.filterwarnings("ignore", category=ResourceWarning)
 
     parser = argparse.ArgumentParser(description="AI Terminal 智能终端管家")
     parser.add_argument("-c", "--config", help="配置文件路径")
@@ -348,7 +361,14 @@ def main() -> None:
             asyncio.run(app.run())
         except KeyboardInterrupt:
             console.print(f"\n[bold cyan]{_EMOJI_BYE} 再见！[/bold cyan]")
-            sys.exit(0)
+        finally:
+            # 确保子进程传输被正确关闭，避免 __del__ 报错
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.stop()
+            except RuntimeError:
+                pass
 
 
 if __name__ == "__main__":

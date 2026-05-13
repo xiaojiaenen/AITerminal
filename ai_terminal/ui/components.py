@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import platform
 import sys
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -54,46 +57,83 @@ _EMOJI_CLOCK = "⏱" if _supports_emoji() else "t"
 console = Console()
 
 
+def _get_system_info() -> dict[str, str]:
+    """收集系统信息。"""
+    info: dict[str, str] = {}
+    info["os"] = f"{platform.system()} {platform.release()}"
+    info["arch"] = platform.machine()
+    info["python"] = platform.python_version()
+    info["hostname"] = platform.node()
+    info["shell"] = "PowerShell" if _is_windows() else os.environ.get("SHELL", "bash")
+    info["cwd"] = os.getcwd()
+    return info
+
+
 def print_banner() -> None:
-    """打印启动横幅。"""
-    banner = Text()
-    banner.append("╔══════════════════════════════════════════════════╗\n", style="cyan")
-    banner.append("║           ", style="cyan")
-    banner.append("AI Terminal 智能终端管家", style="bold white")
-    banner.append("            ║\n", style="cyan")
-    banner.append("╠══════════════════════════════════════════════════╣\n", style="cyan")
-    banner.append("║  ", style="cyan")
-    banner.append("自然语言", style="green")
-    banner.append(" → ", style="dim")
-    banner.append("安全执行", style="yellow")
-    banner.append(" → ", style="dim")
-    banner.append("智能运维", style="red")
-    banner.append("              ║\n", style="cyan")
-    banner.append("╠══════════════════════════════════════════════════╣\n", style="cyan")
-    banner.append("║  输入模式：                                      ║\n", style="cyan")
-    banner.append("║    ", style="cyan")
-    banner.append("无前缀", style="bold")
-    banner.append("  AI 对话   ", style="dim")
-    banner.append('"看看磁盘使用率"', style="white")
-    banner.append("       ║\n", style="cyan")
-    banner.append("║    ", style="cyan")
-    banner.append("!      ", style="bold")
-    banner.append(" 直接执行   ", style="dim")
-    banner.append("!docker ps", style="white")
-    banner.append("               ║\n", style="cyan")
-    banner.append("║    ", style="cyan")
-    banner.append(">      ", style="bold")
-    banner.append(" 混合模式   ", style="dim")
-    banner.append("> 清理日志", style="white")
-    banner.append("               ║\n", style="cyan")
-    banner.append("║    ", style="cyan")
-    banner.append("/help", style="bold")
-    banner.append("  帮助信息                            ║\n", style="cyan")
-    banner.append("║    ", style="cyan")
-    banner.append("/quit", style="bold")
-    banner.append("  退出                                ║\n", style="cyan")
-    banner.append("╚══════════════════════════════════════════════════╝", style="cyan")
-    console.print(banner)
+    """打印启动横幅（含小精灵和系统信息）。"""
+    info = _get_system_info()
+
+    # 小精灵 ASCII art（纯 ASCII，兼容所有终端）
+    mascot_lines = Text()
+    mascot_lines.append("    .----.\n", style="bold cyan")
+    mascot_lines.append("   / o  o \\    ", style="bold cyan")
+    mascot_lines.append("AI Terminal\n", style="bold white")
+    mascot_lines.append("   |  <>  |    ", style="bold cyan")
+    mascot_lines.append("智能终端管家\n", style="dim")
+    mascot_lines.append("   | \\__/ |    ", style="bold cyan")
+    mascot_lines.append("自然语言", style="green")
+    mascot_lines.append(" -> ", style="dim")
+    mascot_lines.append("安全执行", style="yellow")
+    mascot_lines.append(" -> ", style="dim")
+    mascot_lines.append("智能运维\n", style="red")
+    mascot_lines.append("   '------'\n", style="bold cyan")
+    mascot_lines.append("    |    |", style="bold cyan")
+
+    # 系统信息面板
+    sys_table = Table(show_header=False, box=None, padding=(0, 2))
+    sys_table.add_column("key", style="dim")
+    sys_table.add_column("val", style="cyan")
+    sys_table.add_row("系统", info["os"])
+    sys_table.add_row("架构", info["arch"])
+    sys_table.add_row("Python", info["python"])
+    sys_table.add_row("主机", info["hostname"])
+    sys_table.add_row("Shell", info["shell"])
+    sys_table.add_row("目录", info["cwd"])
+
+    # 使用说明
+    mode_table = Table(show_header=False, box=None, padding=(0, 1))
+    mode_table.add_column("mode", style="bold")
+    mode_table.add_column("desc", style="dim")
+    mode_table.add_column("example")
+    mode_table.add_row("无前缀", "AI 对话", '"看看磁盘使用率"')
+    mode_table.add_row("!命令", "直接执行", "!dir")
+    mode_table.add_row(">描述", "混合模式", "> 清理日志")
+    mode_table.add_row("/help", "帮助", "")
+    mode_table.add_row("/quit", "退出", "")
+
+    # 拼装
+    mascot_panel = Panel(
+        mascot_lines,
+        box=box.SIMPLE,
+        border_style="cyan",
+        width=30,
+    )
+    info_panel = Panel(
+        sys_table,
+        title="系统信息",
+        border_style="blue",
+        width=30,
+    )
+    mode_panel = Panel(
+        mode_table,
+        title="输入模式",
+        border_style="green",
+        width=40,
+    )
+
+    console.print()
+    console.print(Columns([mascot_panel, info_panel, mode_panel], padding=1))
+    console.print()
 
 
 def print_help() -> None:
