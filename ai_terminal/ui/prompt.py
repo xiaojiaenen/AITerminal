@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,7 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.styles import Style
+from prompt_toolkit.formatted_text import FormattedText
 
 try:
     from prompt_toolkit.lexers import PygmentsLexer
@@ -37,13 +40,51 @@ def _is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def _shorten_path(path: str, max_len: int = 30) -> str:
+    """缩短路径显示（保留开头和末尾）。"""
+    if len(path) <= max_len:
+        return path
+    parts = path.replace("\\", "/").split("/")
+    if len(parts) <= 2:
+        return path[:max_len - 3] + "..."
+    return parts[0] + "/.../" + "/".join(parts[-2:])
+
+
+def _get_git_branch() -> str | None:
+    """获取当前 git 分支名。"""
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True, text=True, timeout=2,
+            cwd=os.getcwd(),
+        )
+        branch = result.stdout.strip()
+        return branch if branch else None
+    except Exception:
+        return None
+
+
+def _make_rprompt() -> FormattedText:
+    """构造右侧提示：当前目录 + git 分支。"""
+    cwd = _shorten_path(os.getcwd(), 35)
+    parts = [("class:rprompt", f" {cwd} ")]
+
+    branch = _get_git_branch()
+    if branch:
+        parts.append(("class:rprompt-branch", f"git:({branch}) "))
+
+    return FormattedText(parts)
+
+
 # 自定义样式
 TERMINAL_STYLE = Style.from_dict({
     "prompt": "bold cyan",
+    "prompt-ai": "bold #00d7ff",
+    "prompt-direct": "bold #00ff5f",
+    "prompt-hybrid": "bold #ffd700",
+    "rprompt": "dim #666666",
+    "rprompt-branch": "bold #d787ff",
     "command": "bold green",
-    "mode-ai": "bold white",
-    "mode-direct": "bold green",
-    "mode-hybrid": "bold yellow",
 })
 
 # 快捷命令补全（跨平台通用）
@@ -227,7 +268,7 @@ class TerminalPrompt:
         return self._session
 
     async def get_input(self, mode: str = "ai") -> str | None:
-        """获取用户输入（异步）。
+        """获取用户输入（异步）。带上下文右侧提示。
 
         Args:
             mode: 当前输入模式 ("ai", "direct", "hybrid")
@@ -235,17 +276,18 @@ class TerminalPrompt:
         Returns:
             用户输入字符串，或 None（Ctrl+C/Ctrl+D）
         """
-        mode_styles = {
-            "ai": ("❯ ", "bold cyan"),
-            "direct": ("$ ", "bold green"),
-            "hybrid": ("> ", "bold yellow"),
+        mode_prompts = {
+            "ai": ("❯ ", "class:prompt-ai"),
+            "direct": ("! ", "class:prompt-direct"),
+            "hybrid": ("> ", "class:prompt-hybrid"),
         }
-        prompt_text, style_name = mode_styles.get(mode, ("❯ ", "bold cyan"))
+        prompt_text, style_class = mode_prompts.get(mode, ("❯ ", "class:prompt-ai"))
 
         try:
             session = self._get_session()
             return await session.prompt_async(
-                [(style_name, prompt_text)],
+                [(style_class, prompt_text)],
+                rprompt=_make_rprompt,
                 lexer=_get_lexer(),
             )
         except (EOFError, KeyboardInterrupt):

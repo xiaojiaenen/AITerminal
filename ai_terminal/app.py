@@ -6,6 +6,9 @@ import asyncio
 import sys
 from typing import Any
 
+from rich import box
+from rich.table import Table
+
 from ai_terminal.config import Config
 from ai_terminal.safety.policy import SafetyPolicy, RiskLevel
 from ai_terminal.safety.audit import AuditLogger, AuditAction
@@ -25,6 +28,11 @@ from ai_terminal.ui.components import (
     print_history,
     print_history_detail,
     print_config,
+    print_success,
+    print_error,
+    print_warning,
+    print_info,
+    create_spinner,
     _EMOJI_OK,
     _EMOJI_FAIL,
     _EMOJI_WARN,
@@ -210,7 +218,11 @@ class AITerminal:
                 console.print("\n[yellow]已取消。[/yellow]")
                 return
 
-        result = await self.shell.run(command)
+        # 执行中显示旋转器
+        from rich.live import Live
+        spinner = create_spinner(f"执行中... {command[:60]}")
+        with Live(spinner, console=console, refresh_per_second=10, transient=True):
+            result = await self.shell.run(command)
 
         print_command_result(
             command=command,
@@ -403,7 +415,7 @@ class AITerminal:
         cmd = cmd.strip().lower()
 
         if cmd in ("/quit", "/exit", "/q"):
-            console.print(f"\n[bold cyan]{_EMOJI_BYE} 再见！[/bold cyan]")
+            console.print(f"\n[bold cyan]{_EMOJI_BYE} 再见！[/bold cyan]\n")
             return False
 
         if cmd == "/help":
@@ -413,21 +425,41 @@ class AITerminal:
         if cmd == "/new":
             agent = self._get_agent()
             agent.clear_session()
-            console.print(f"\n[green]{_EMOJI_OK} 已开始新对话，上下文已清除。[/green]")
+            print_success("已开始新对话，上下文已清除。")
             return True
 
         if cmd == "/status":
-            console.print(f"\n[bold]{_EMOJI_CHART} 系统状态[/bold]")
-            console.print(f"   工作目录: [cyan]{self.shell.work_dir}[/cyan]")
-            console.print(f"   命令超时: [cyan]{self.shell.timeout}s[/cyan]")
-            console.print(f"   安全策略: [cyan]{'启用' if self.config.get('safety.enabled', True) else '禁用'}[/cyan]")
-            console.print(f"   主机数量: [cyan]{len(self.config.load_inventory().hosts)}[/cyan]")
-            # 上下文信息
             agent = self._get_agent()
             ctx = agent.get_context_info()
-            console.print(f"   会话轮数: [cyan]{ctx['rounds']}[/cyan]")
-            console.print(f"   上下文消息: [cyan]{ctx['messages']} 条[/cyan]")
-            console.print(f"   估算 Token: [cyan]~{ctx['estimated_tokens']}[/cyan]")
+            console.print()
+            status_table = Table(
+                title=f"{_EMOJI_CHART} 系统状态",
+                box=box.ROUNDED,
+                show_header=False,
+            )
+            status_table.add_column("k", style="bold dim")
+            status_table.add_column("v", style="cyan")
+            status_table.add_column("k2", style="bold dim")
+            status_table.add_column("v2", style="cyan")
+            status_table.add_row(
+                "工作目录", self.shell.work_dir,
+                "命令超时", f"{self.shell.timeout}s",
+            )
+            status_table.add_row(
+                "安全策略",
+                "启用" if self.config.get("safety.enabled", True) else "禁用",
+                "主机数量",
+                str(len(self.config.load_inventory().hosts)),
+            )
+            status_table.add_row(
+                "会话轮数", str(ctx["rounds"]),
+                "上下文消息", f"{ctx['messages']} 条",
+            )
+            status_table.add_row(
+                "估算 Token", f"~{ctx['estimated_tokens']}",
+                "经验记录", str(len(self.incidents._incidents)),
+            )
+            console.print(status_table)
             return True
 
         if cmd == "/history":
