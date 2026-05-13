@@ -95,12 +95,27 @@ class AITerminalAgent:
             return self._agent
 
         llm_config = self.config.llm
-        self._llm = LLMGateway(
-            provider=llm_config.get("provider", "openai"),
-            model=llm_config.get("model", "gpt-4o"),
-            temperature=llm_config.get("temperature", 0.1),
-            max_tokens=llm_config.get("max_tokens", 4096),
-        )
+
+        # api_key: 优先用配置文件，其次用环境变量
+        api_key = llm_config.get("api_key") or __import__("os").environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise ValueError(
+                "未配置 LLM API Key。请在 config.yaml 中设置 llm.api_key，"
+                "或设置环境变量 OPENAI_API_KEY"
+            )
+
+        # LLMGateway 需要 config dict，支持 api_key / base_url
+        gw_config = {
+            "provider": llm_config.get("provider", "openai"),
+            "api_key": api_key,
+            "model": llm_config.get("model", "gpt-4o"),
+            "temperature": llm_config.get("temperature", 0.1),
+            "max_tokens": llm_config.get("max_tokens", 4096),
+        }
+        if llm_config.get("base_url"):
+            gw_config["base_url"] = llm_config["base_url"]
+
+        self._llm = LLMGateway(gw_config)
 
         self._agent = Agent(
             llm=self._llm,
