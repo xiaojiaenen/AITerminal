@@ -43,7 +43,8 @@ jobs:
       - name: 安装依赖
         run: |
           pip install --upgrade pip
-          pip install pyinstaller ai-terminal[dev]
+          pip install pyinstaller
+          pip install .
         shell: bash
 
       - name: 构建 (Linux/macOS)
