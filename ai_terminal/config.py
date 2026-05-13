@@ -93,8 +93,8 @@ class ClusterInventory:
         with open(p, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 
-        hosts = [HostConfig.from_dict(h) for h in data.get("hosts", [])]
-        groups = data.get("groups", {})
+        hosts = [HostConfig.from_dict(h) for h in (data.get("hosts") or [])]
+        groups = data.get("groups") or {}
 
         return cls(hosts=hosts, groups=groups)
 

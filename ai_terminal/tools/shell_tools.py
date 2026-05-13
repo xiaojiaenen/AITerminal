@@ -21,9 +21,9 @@ def _get_shell_command(command: str) -> tuple[str, bool]:
         (shell_command, use_shell) 元组
     """
     if _is_windows():
-        # Windows: 优先用 PowerShell，回退到 cmd
-        pwsh = os.environ.get("SHELL", "").endswith("pwsh") or os.environ.get("PSModulePath")
-        if pwsh:
+        # Windows: 检测 pwsh (PowerShell 7+) 是否可用，否则用 powershell
+        import shutil
+        if shutil.which("pwsh"):
             return f'pwsh -NoProfile -Command "{command}"', False
         else:
             return f'powershell -NoProfile -Command "{command}"', False

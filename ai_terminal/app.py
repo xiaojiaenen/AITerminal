@@ -136,9 +136,8 @@ class AITerminal:
         """混合模式 — AI 生成命令，用户确认后执行。"""
         try:
             agent = self._get_agent()
-            response = await agent.chat(
-                f"用户需要: {description}\n"
-                "请只输出要执行的 shell 命令，不要解释。如果需要多条命令，每行一条。"
+            response = await agent.generate_command(
+                f"用户需要: {description}"
             )
             commands = [line.strip() for line in response.strip().split("\n") if line.strip()]
             if not commands:
