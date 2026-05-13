@@ -281,7 +281,7 @@ class AITerminal:
         self._running = True
 
         while self._running:
-            user_input = self.prompt.get_input(current_mode)
+            user_input = await self.prompt.get_input(current_mode)
 
             if user_input is None:
                 console.print(f"\n[bold cyan]{_EMOJI_BYE} 再见！[/bold cyan]")

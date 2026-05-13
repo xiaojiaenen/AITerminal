@@ -157,8 +157,8 @@ class TerminalPrompt:
             )
         return self._session
 
-    def get_input(self, mode: str = "ai") -> str | None:
-        """获取用户输入。
+    async def get_input(self, mode: str = "ai") -> str | None:
+        """获取用户输入（异步）。
 
         Args:
             mode: 当前输入模式 ("ai", "direct", "hybrid")
@@ -175,7 +175,7 @@ class TerminalPrompt:
 
         try:
             session = self._get_session()
-            return session.prompt(
+            return await session.prompt_async(
                 [(style_name, prompt_text)],
                 lexer=_get_lexer(),
             )
