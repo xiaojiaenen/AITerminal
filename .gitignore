@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+*.egg-info
+.venv
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# OS
+.DS_Store
+
+# AI Terminal runtime data
+~/.ai-terminal/

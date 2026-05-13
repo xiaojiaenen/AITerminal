@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-terminal"
+version = "0.1.0"
+description = "AI Terminal — 智能终端管家，用自然语言操作终端、管理集群"
+authors = [{name = "xiaojiaenen", email = "xiaojiaenen@163.com"}]
+license = "Apache-2.0"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "wuwei>=1.0.0",
+    "asyncssh>=2.14",
+    "prompt_toolkit>=3.0",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "ruff>=0.0.280",
+]
+
+[project.scripts]
+ai-terminal = "ai_terminal.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_terminal*"]
+exclude = ["tests*", "docs*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
