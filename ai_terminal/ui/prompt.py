@@ -7,7 +7,15 @@ from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter, PathCompleter, merge_completers
+from prompt_toolkit.completion import (
+    WordCompleter,
+    PathCompleter,
+    NestedCompleter,
+    Completer,
+    Completion,
+    merge_completers,
+)
+from prompt_toolkit.document import Document
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.styles import Style
@@ -40,8 +48,8 @@ TERMINAL_STYLE = Style.from_dict({
 
 # 快捷命令补全（跨平台通用）
 SLASH_COMMANDS = [
-    "/help", "/status", "/history", "/stats", "/config",
-    "/incidents", "/hosts", "/quit", "/exit",
+    "/help", "/new", "/status", "/history", "/stats", "/config",
+    "/incidents", "/hosts", "/skills", "/quit", "/exit",
 ]
 
 # Linux/macOS 常用命令
@@ -105,6 +113,54 @@ _WINDOWS_COMMANDS = [
 ]
 
 
+class ContextCompleter(Completer):
+    """上下文感知补全器 — 根据输入前缀智能切换补全策略。"""
+
+    def __init__(
+        self,
+        slash_completer: Completer,
+        command_completer: Completer,
+        path_completer: Completer,
+    ):
+        self.slash_completer = slash_completer
+        self.command_completer = command_completer
+        self.path_completer = path_completer
+
+    def get_completions(self, document: Document, complete_event):
+        text = document.text_before_cursor.lstrip()
+
+        # / 开头 → 斜杠命令补全
+        if text.startswith("/"):
+            yield from self.slash_completer.get_completions(document, complete_event)
+            return
+
+        # ! 开头 → 只补全命令（去掉 ! 前缀后匹配）
+        if text.startswith("!"):
+            # 创建一个去掉 ! 前缀的虚拟文档
+            stripped = text[1:]
+            virtual_doc = Document(
+                text=stripped + document.text_after_cursor,
+                cursor_position=document.cursor_position - 1,
+            )
+            for comp in self.command_completer.get_completions(virtual_doc, complete_event):
+                yield Completion(
+                    text=comp.text,
+                    start_position=comp.start_position,
+                    display=comp.display,
+                    display_meta=comp.display_meta,
+                    style=comp.style,
+                )
+            return
+
+        # > 开头 → AI 混合模式，只补全路径
+        if text.startswith(">"):
+            yield from self.path_completer.get_completions(document, complete_event)
+            return
+
+        # 普通输入 → AI 对话模式，只补全路径
+        yield from self.path_completer.get_completions(document, complete_event)
+
+
 def _get_lexer():
     """根据平台返回合适的语法高亮 lexer。"""
     if not HAS_LEXER or not HAS_PYGMENTS:
@@ -131,16 +187,26 @@ class TerminalPrompt:
         self._history_path = Path(history_file).expanduser()
         self._history_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 补全器
-        slash_completer = WordCompleter(SLASH_COMMANDS, ignore_case=True)
-        command_completer = WordCompleter(_get_common_commands(), ignore_case=True)
-        path_completer = PathCompleter()
+        # 分层补全器
+        slash_completer = WordCompleter(
+            SLASH_COMMANDS,
+            ignore_case=True,
+            sentence=True,  # 支持多词输入
+        )
+        command_completer = WordCompleter(
+            _get_common_commands(),
+            ignore_case=True,
+            sentence=True,
+        )
+        path_completer = PathCompleter(
+            expanduser=True,
+        )
 
-        self._completer = merge_completers([
-            slash_completer,
-            command_completer,
-            path_completer,
-        ])
+        self._completer = ContextCompleter(
+            slash_completer=slash_completer,
+            command_completer=command_completer,
+            path_completer=path_completer,
+        )
 
         # 会话
         self._session: PromptSession | None = None
@@ -154,6 +220,9 @@ class TerminalPrompt:
                 auto_suggest=AutoSuggestFromHistory(),
                 completer=self._completer,
                 style=TERMINAL_STYLE,
+                complete_while_typing=True,  # 输入时实时补全
+                complete_in_thread=True,  # 补全在后台线程，不阻塞输入
+                reserve_space_for_menu=4,  # 底部预留 4 行显示下拉菜单
             )
         return self._session
 

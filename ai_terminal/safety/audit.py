@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
@@ -92,7 +92,7 @@ class AuditLogger:
     ) -> AuditEntry:
         """记录命令执行。"""
         entry = AuditEntry(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now().isoformat(),
             command=command,
             action=action,
             risk_level=risk_level,
@@ -115,7 +115,7 @@ class AuditLogger:
     ) -> AuditEntry:
         """记录被阻止的命令。"""
         entry = AuditEntry(
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now().isoformat(),
             command=command,
             action=AuditAction.BLOCKED,
             risk_level=risk_level,

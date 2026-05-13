@@ -1,10 +1,10 @@
-"""踩坑自动沉淀 — 从失败中学习，生成可复用 Skill。"""
+"""经验自动沉淀 — 从失败中学习，生成可复用 Skill。"""
 
 from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
@@ -12,7 +12,7 @@ from typing import Any
 
 @dataclass
 class Incident:
-    """一次踩坑记录。"""
+    """一条经验记录。"""
     id: str
     timestamp: str
     command: str
@@ -57,7 +57,7 @@ class Incident:
 
 
 class IncidentRecorder:
-    """踩坑记录器。"""
+    """经验记录器。"""
 
     # 常见错误模式 → 根因 + 解决方案
     KNOWN_PATTERNS: list[tuple[str, str, str, list[str]]] = [
@@ -181,6 +181,17 @@ class IncidentRecorder:
         if exit_code == 0:
             return None  # 成功的命令不记录
 
+        # 过滤：太短的错误信息不值得记录（如单纯的 "error"）
+        stripped_error = error_output.strip()
+        if len(stripped_error) < 10:
+            return None
+
+        # 过滤：过于简单的命令不值得沉淀经验
+        trivial_commands = {"cls", "clear", "echo", "pwd", "cd", "whoami", "date", "time"}
+        cmd_root = command.strip().split()[0] if command.strip() else ""
+        if cmd_root.lower() in trivial_commands and not stripped_error:
+            return None
+
         # 检测已知模式
         root_cause = ""
         solution = ""
@@ -195,11 +206,24 @@ class IncidentRecorder:
                 solution = self._fill_solution(solution, command, error_output)
                 break
 
+        # 过滤：没有匹配已知模式且错误信息不包含实质性内容
+        if not root_cause:
+            # 只保留有关键异常字样的错误
+            has_substance = any(
+                kw in stripped_error.lower()
+                for kw in (
+                    "error", "fail", "exception", "denied",
+                    "not found", "cannot", "无法", "错误",
+                )
+            )
+            if not has_substance:
+                return None
+
         incident = Incident(
             id=self._generate_id(),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now().isoformat(),
             command=command,
-            error_output=error_output[:2000],
+            error_output=stripped_error[:2000],
             exit_code=exit_code,
             root_cause=root_cause,
             solution=solution,
@@ -236,11 +260,11 @@ class IncidentRecorder:
         return solution
 
     def get_unresolved(self) -> list[Incident]:
-        """获取未解决的踩坑记录。"""
+        """获取未解决的经验记录。"""
         return [i for i in self._incidents if not i.resolved]
 
     def get_recent(self, count: int = 20) -> list[Incident]:
-        """获取最近的踩坑记录。"""
+        """获取最近的经验记录。"""
         return self._incidents[-count:]
 
     def mark_resolved(self, incident_id: str, solution: str) -> bool:
@@ -253,6 +277,33 @@ class IncidentRecorder:
                 return True
         return False
 
+    def _create_incident(
+        self,
+        command: str = "",
+        error_output: str = "",
+        root_cause: str = "",
+        solution: str = "",
+        tags: list[str] | None = None,
+    ) -> Incident | None:
+        """直接创建一条经验记录（由 LLM 审查生成）。跳过自动诊断。"""
+        if not solution and not root_cause:
+            return None  # 没有实质内容不记录
+
+        incident = Incident(
+            id=self._generate_id(),
+            timestamp=datetime.now().isoformat(),
+            command=command[:500],
+            error_output=error_output[:2000],
+            exit_code=-1,  # LLM 审查生成，非实际失败
+            root_cause=root_cause,
+            solution=solution,
+            tags=list(set(tags or [])),
+            resolved=bool(solution),
+        )
+        self._incidents.append(incident)
+        self._save(incident)
+        return incident
+
     def _save_all(self) -> None:
         """重新保存所有记录。"""
         incidents_file = self.store_path / "incidents.jsonl"
@@ -261,7 +312,7 @@ class IncidentRecorder:
                 f.write(json.dumps(incident.to_dict(), ensure_ascii=False) + "\n")
 
     def generate_skill(self, incident: Incident) -> str:
-        """从踩坑记录生成 Skill 文档。"""
+        """从经验记录生成 Skill 文档。"""
         skill_dir = self.store_path / "skills"
         skill_dir.mkdir(exist_ok=True)
 
@@ -286,7 +337,7 @@ class IncidentRecorder:
         return paths
 
     def search(self, query: str) -> list[Incident]:
-        """搜索踩坑记录。"""
+        """搜索经验记录。"""
         query_lower = query.lower()
         results = []
         for incident in self._incidents:
@@ -321,7 +372,7 @@ class IncidentRecorder:
 
 
 def register_incident_tools(registry: Any, recorder: IncidentRecorder) -> None:
-    """注册踩坑记录相关工具。"""
+    """注册经验记录相关工具。"""
 
     @registry.tool(
         name="record_incident",
@@ -343,7 +394,7 @@ def register_incident_tools(registry: Any, recorder: IncidentRecorder) -> None:
 
     @registry.tool(
         name="search_incidents",
-        description="搜索历史踩坑记录，查找类似问题的解决方案。",
+        description="搜索历史经验记录，查找类似问题的解决方案。",
     )
     async def search_incidents(query: str) -> dict:
         results = recorder.search(query)
@@ -354,7 +405,7 @@ def register_incident_tools(registry: Any, recorder: IncidentRecorder) -> None:
 
     @registry.tool(
         name="get_incident_stats",
-        description="获取踩坑记录统计信息。",
+        description="获取经验记录统计信息。",
     )
     async def get_incident_stats() -> dict:
         return recorder.get_stats()

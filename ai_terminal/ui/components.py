@@ -154,11 +154,14 @@ def print_help() -> None:
     table.add_row("", "")
     table.add_row("/help", "显示此帮助")
     table.add_row("/status", "显示系统状态")
+    table.add_row("/new", "清除对话上下文，开始新对话")
     table.add_row("/history", "显示执行历史")
     table.add_row("/stats", "显示审计统计")
     table.add_row("/config", "显示当前配置")
-    table.add_row("/incidents", "查看踩坑记录")
+    table.add_row("/incidents", "查看经验记录")
     table.add_row("/hosts", "查看主机清单")
+    table.add_row("/skills", "查看可用技能列表")
+    table.add_row("/skill <名称>", "查看技能详情和可执行命令")
     table.add_row("/quit", "退出程序")
 
     console.print(table)
@@ -280,7 +283,7 @@ def print_remote_results(results: list[dict]) -> None:
 
 
 def print_incident(incident: dict) -> None:
-    """打印踩坑记录。"""
+    """打印经验记录。"""
     root_cause = incident.get("root_cause", "")
     solution = incident.get("solution", "")
     command = incident.get("command", "")
@@ -296,12 +299,12 @@ def print_incident(incident: dict) -> None:
         content += f"\n[bold]标签[/bold]: {', '.join(tags)}"
 
     border = "green" if incident.get("resolved") else "red"
-    console.print(Panel(content, title=f"{_EMOJI_WRENCH} 踩坑记录 {incident.get('id', '')}", border_style=border))
+    console.print(Panel(content, title=f"{_EMOJI_WRENCH} 经验记录 {incident.get('id', '')}", border_style=border))
 
 
 def print_incident_stats(stats: dict) -> None:
-    """打印踩坑统计。"""
-    table = Table(title="踩坑统计", box=box.SIMPLE)
+    """打印经验统计。"""
+    table = Table(title="经验统计", box=box.SIMPLE)
     table.add_column("指标", style="bold")
     table.add_column("数值", justify="right")
 
