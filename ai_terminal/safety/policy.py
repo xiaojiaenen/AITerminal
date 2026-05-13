@@ -1,8 +1,9 @@
-"""安全策略引擎 — 命令分级与决策。"""
+"""安全策略引擎 — 命令分级与决策（跨平台）。"""
 
 from __future__ import annotations
 
 import re
+import sys
 from dataclasses import dataclass
 from enum import Enum
 
@@ -26,8 +27,16 @@ class Decision:
     rollback_command: str | None = None
 
 
-# SAFE — 只读，没有任何副作用
-_SAFE_PATTERNS: list[re.Pattern] = [
+# ── 跨平台命令别名映射 ──────────────────────────────────────────────
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+# ── SAFE — 只读，没有任何副作用 ──────────────────────────────────────
+
+# Linux/macOS SAFE 命令
+_SAFE_UNIX: list[re.Pattern] = [
     re.compile(r"^ls\b"),
     re.compile(r"^cat\b"),
     re.compile(r"^head\b"),
@@ -88,8 +97,82 @@ _SAFE_PATTERNS: list[re.Pattern] = [
     re.compile(r"^history\b"),
 ]
 
-# LOW — 写入操作，但可逆或影响范围小
-_LOW_PATTERNS: list[re.Pattern] = [
+# Windows SAFE 命令
+_SAFE_WINDOWS: list[re.Pattern] = [
+    re.compile(r"^dir\b", re.IGNORECASE),
+    re.compile(r"^type\b", re.IGNORECASE),
+    re.compile(r"^echo\b", re.IGNORECASE),
+    re.compile(r"^whoami\b", re.IGNORECASE),
+    re.compile(r"^hostname\b", re.IGNORECASE),
+    re.compile(r"^ver\b", re.IGNORECASE),
+    re.compile(r"^systeminfo\b", re.IGNORECASE),
+    re.compile(r"^tasklist\b", re.IGNORECASE),
+    re.compile(r"^ipconfig\b", re.IGNORECASE),
+    re.compile(r"^ping\b", re.IGNORECASE),
+    re.compile(r"^tracert\b", re.IGNORECASE),
+    re.compile(r"^nslookup\b", re.IGNORECASE),
+    re.compile(r"^netstat\b", re.IGNORECASE),
+    re.compile(r"^net\s+user\b", re.IGNORECASE),
+    re.compile(r"^net\s+localgroup\b", re.IGNORECASE),
+    re.compile(r"^net\s+share\b", re.IGNORECASE),
+    re.compile(r"^net\s+use\b", re.IGNORECASE),
+    re.compile(r"^where\b", re.IGNORECASE),
+    re.compile(r"^date\b", re.IGNORECASE),
+    re.compile(r"^time\b", re.IGNORECASE),
+    re.compile(r"^chcp\b", re.IGNORECASE),
+    re.compile(r"^set\b", re.IGNORECASE),
+    re.compile(r"^tree\b", re.IGNORECASE),
+    re.compile(r"^vol\b", re.IGNORECASE),
+    re.compile(r"^fsutil\b", re.IGNORECASE),
+    re.compile(r"^wmic\b", re.IGNORECASE),
+    re.compile(r"^sc\s+query\b", re.IGNORECASE),
+    re.compile(r"^curl\b", re.IGNORECASE),
+    # PowerShell SAFE 命令
+    re.compile(r"^Get-Process\b", re.IGNORECASE),
+    re.compile(r"^Get-Service\b", re.IGNORECASE),
+    re.compile(r"^Get-ChildItem\b", re.IGNORECASE),
+    re.compile(r"^Get-Content\b", re.IGNORECASE),
+    re.compile(r"^Get-Location\b", re.IGNORECASE),
+    re.compile(r"^Get-Date\b", re.IGNORECASE),
+    re.compile(r"^Get-Host\b", re.IGNORECASE),
+    re.compile(r"^Get-Help\b", re.IGNORECASE),
+    re.compile(r"^Get-Command\b", re.IGNORECASE),
+    re.compile(r"^Get-Alias\b", re.IGNORECASE),
+    re.compile(r"^Get-EventLog\b", re.IGNORECASE),
+    re.compile(r"^Get-WmiObject\b", re.IGNORECASE),
+    re.compile(r"^Get-CimInstance\b", re.IGNORECASE),
+    re.compile(r"^Select-Object\b", re.IGNORECASE),
+    re.compile(r"^Where-Object\b", re.IGNORECASE),
+    re.compile(r"^Format-Table\b", re.IGNORECASE),
+    re.compile(r"^Format-List\b", re.IGNORECASE),
+    re.compile(r"^Measure-Object\b", re.IGNORECASE),
+    re.compile(r"^Test-Path\b", re.IGNORECASE),
+    re.compile(r"^Resolve-Path\b", re.IGNORECASE),
+    # 跨平台通用
+    re.compile(r"^docker ps\b"),
+    re.compile(r"^docker images\b"),
+    re.compile(r"^docker logs\b"),
+    re.compile(r"^docker inspect\b"),
+    re.compile(r"^docker stats\b"),
+    re.compile(r"^docker top\b"),
+    re.compile(r"^git (status|log|diff|show|branch|remote)\b"),
+]
+
+# macOS 额外 SAFE 命令
+_SAFE_MACOS_EXTRA: list[re.Pattern] = [
+    re.compile(r"^open\b"),
+    re.compile(r"^pbcopy\b"),
+    re.compile(r"^pbpaste\b"),
+    re.compile(r"^sw_vers\b"),
+    re.compile(r"^sysctl\b"),
+    re.compile(r"^diskutil\b"),
+    re.compile(r"^softwareupdate\b"),
+    re.compile(r"^launchctl\b"),
+]
+
+# ── LOW — 写入操作，但可逆或影响范围小 ──────────────────────────────
+
+_LOW_UNIX: list[re.Pattern] = [
     re.compile(r"^touch\b"),
     re.compile(r"^mkdir\b"),
     re.compile(r"^cp\b"),
@@ -115,8 +198,53 @@ _LOW_PATTERNS: list[re.Pattern] = [
     re.compile(r"^chmod\b(?!.*777)"),
 ]
 
-# HIGH — 破坏性操作，有备份路径但需要确认
-_HIGH_PATTERNS: list[re.Pattern] = [
+_LOW_WINDOWS: list[re.Pattern] = [
+    re.compile(r"^md\b", re.IGNORECASE),
+    re.compile(r"^mkdir\b", re.IGNORECASE),
+    re.compile(r"^copy\b", re.IGNORECASE),
+    re.compile(r"^move\b", re.IGNORECASE),
+    re.compile(r"^ren\b", re.IGNORECASE),
+    re.compile(r"^rename\b", re.IGNORECASE),
+    re.compile(r"^xcopy\b", re.IGNORECASE),
+    re.compile(r"^robocopy\b", re.IGNORECASE),
+    re.compile(r"^echo\b.*>>", re.IGNORECASE),
+    re.compile(r"^mklink\b", re.IGNORECASE),
+    re.compile(r"^attrib\b", re.IGNORECASE),
+    re.compile(r"^icacls\b", re.IGNORECASE),
+    re.compile(r"^takeown\b", re.IGNORECASE),
+    re.compile(r"^schtasks\b", re.IGNORECASE),
+    re.compile(r"^sc\s+(start|stop|config)\b", re.IGNORECASE),
+    re.compile(r"^reg\s+(add|delete)\b", re.IGNORECASE),
+    # PowerShell LOW 命令
+    re.compile(r"^New-Item\b", re.IGNORECASE),
+    re.compile(r"^Copy-Item\b", re.IGNORECASE),
+    re.compile(r"^Move-Item\b", re.IGNORECASE),
+    re.compile(r"^Rename-Item\b", re.IGNORECASE),
+    re.compile(r"^Remove-Item\b", re.IGNORECASE),
+    re.compile(r"^Set-Content\b", re.IGNORECASE),
+    re.compile(r"^Add-Content\b", re.IGNORECASE),
+    re.compile(r"^Start-Service\b", re.IGNORECASE),
+    re.compile(r"^Stop-Service\b", re.IGNORECASE),
+    re.compile(r"^Restart-Service\b", re.IGNORECASE),
+    re.compile(r"^Start-Process\b", re.IGNORECASE),
+    re.compile(r"^Invoke-WebRequest\b", re.IGNORECASE),
+    re.compile(r"^Invoke-RestMethod\b", re.IGNORECASE),
+    re.compile(r"^Install-Package\b", re.IGNORECASE),
+    re.compile(r"^Set-Location\b", re.IGNORECASE),
+    re.compile(r"^Out-File\b", re.IGNORECASE),
+    # 跨平台通用
+    re.compile(r"^docker run\b"),
+    re.compile(r"^docker start\b"),
+    re.compile(r"^docker stop\b"),
+    re.compile(r"^docker compose\b(.*up|.*down|.*restart)"),
+    re.compile(r"^git (add|commit|push|pull|fetch|checkout|branch|merge|stash)\b"),
+    re.compile(r"^pip(3?)\s+install\b", re.IGNORECASE),
+    re.compile(r"^npm\s+install\b", re.IGNORECASE),
+]
+
+# ── HIGH — 破坏性操作，有备份路径但需要确认 ─────────────────────────
+
+_HIGH_UNIX: list[re.Pattern] = [
     re.compile(r"^rm\b"),
     re.compile(r"^rmdir\b"),
     re.compile(r"^shred\b"),
@@ -144,8 +272,45 @@ _HIGH_PATTERNS: list[re.Pattern] = [
     re.compile(r"^chmod\s+.*777\b"),
 ]
 
-# CRITICAL — 不可逆，可能造成系统级破坏
-_CRITICAL_PATTERNS: list[re.Pattern] = [
+_HIGH_WINDOWS: list[re.Pattern] = [
+    re.compile(r"^del\b", re.IGNORECASE),
+    re.compile(r"^erase\b", re.IGNORECASE),
+    re.compile(r"^rd\b", re.IGNORECASE),
+    re.compile(r"^rmdir\b", re.IGNORECASE),
+    re.compile(r"^format\b", re.IGNORECASE),
+    re.compile(r"^del\b.*\*", re.IGNORECASE),
+    re.compile(r"^echo\b.*>[^>]", re.IGNORECASE),
+    re.compile(r"^net\s+(stop|pause)\b", re.IGNORECASE),
+    re.compile(r"^sc\s+(delete|stop)\b", re.IGNORECASE),
+    re.compile(r"^taskkill\b", re.IGNORECASE),
+    re.compile(r"^reg\s+delete\b", re.IGNORECASE),
+    re.compile(r"^schtasks\s+/delete\b", re.IGNORECASE),
+    re.compile(r"^cipher\s+/w\b", re.IGNORECASE),
+    # PowerShell HIGH 命令
+    re.compile(r"^Remove-Item\b", re.IGNORECASE),
+    re.compile(r"^Remove-ItemProperty\b", re.IGNORECASE),
+    re.compile(r"^Clear-Content\b", re.IGNORECASE),
+    re.compile(r"^Stop-Process\b", re.IGNORECASE),
+    re.compile(r"^Remove-Service\b", re.IGNORECASE),
+    re.compile(r"^Unregister-ScheduledTask\b", re.IGNORECASE),
+    re.compile(r"^Set-ItemProperty\b", re.IGNORECASE),
+    # 跨平台通用
+    re.compile(r"^docker rm\b"),
+    re.compile(r"^docker kill\b"),
+    re.compile(r"^docker rmi\b"),
+    re.compile(r"^docker compose\b.*rm"),
+    re.compile(r"^git reset\b.*--hard"),
+    re.compile(r"^git clean\b.*-f"),
+    re.compile(r"^git push\b.*--force"),
+    re.compile(r"^git branch\b.*-D"),
+    re.compile(r"^mysql\b.*-e.*DELETE\b"),
+    re.compile(r"^mysql\b.*-e.*DROP\b"),
+    re.compile(r"^redis-cli\b.*FLUSH"),
+]
+
+# ── CRITICAL — 不可逆，可能造成系统级破坏 ───────────────────────────
+
+_CRITICAL_UNIX: list[re.Pattern] = [
     re.compile(r"^rm\s+(-rf?|--recursive)\s+/"),
     re.compile(r"^rm\s+(-rf?|--recursive)\s+~"),
     re.compile(r"^rm\s+(-rf?|--recursive)\s+\*"),
@@ -166,8 +331,33 @@ _CRITICAL_PATTERNS: list[re.Pattern] = [
     re.compile(r"^chmod\s+(-R\s+)?777\s+/"),
 ]
 
-# 自动生成替代方案的规则
-_ALTERNATIVES: dict[str, tuple[str, str]] = {
+_CRITICAL_WINDOWS: list[re.Pattern] = [
+    re.compile(r"^del\s+(/[sfq]\s+)+.*\*", re.IGNORECASE),  # 只有带通配符才是 CRITICAL
+    re.compile(r"^del\s+(/[sfq]\s+)+[A-Z]:", re.IGNORECASE),  # 删除驱动器
+    re.compile(r"^rd\s+(/[sq]\s+)+[A-Z]:", re.IGNORECASE),  # 删除驱动器
+    re.compile(r"^rmdir\s+(/[sq]\s+)+[A-Z]:", re.IGNORECASE),  # 删除驱动器
+    re.compile(r"^format\b", re.IGNORECASE),
+    re.compile(r"^diskpart\b", re.IGNORECASE),
+    re.compile(r"^bcdedit\b", re.IGNORECASE),
+    re.compile(r"^shutdown\s+/[sg]\b", re.IGNORECASE),
+    re.compile(r"^restart\b", re.IGNORECASE),
+    re.compile(r"^Remove-Item\s+.*-Recurse\s+.*-Force", re.IGNORECASE),
+    re.compile(r"^Clear-RecycleBin\b", re.IGNORECASE),
+    re.compile(r"^Format-Volume\b", re.IGNORECASE),
+    re.compile(r"^Stop-Computer\b", re.IGNORECASE),
+    re.compile(r"^Restart-Computer\b", re.IGNORECASE),
+    re.compile(r"^Reset-ComputerMachinePassword\b", re.IGNORECASE),
+    # 跨平台通用
+    re.compile(r"^DROP\s+DATABASE\b", re.IGNORECASE),
+    re.compile(r"^TRUNCATE\b", re.IGNORECASE),
+    re.compile(r"^docker system prune\b.*-a"),
+    re.compile(r"^docker volume rm\b"),
+]
+
+
+# ── 替代方案（跨平台） ─────────────────────────────────────────────
+
+_UNIX_ALTERNATIVES: dict[str, tuple[str, str]] = {
     "rm ": (
         "mv {target} ~/.ai-terminal/trash/  # 7 天后自动清理",
         "mv ~/.ai-terminal/trash/{basename} {target}",
@@ -177,8 +367,35 @@ _ALTERNATIVES: dict[str, tuple[str, str]] = {
         "mv ~/.ai-terminal/trash/{basename} {target}",
     ),
     "docker rm": (
-        "docker stop {container}  # 先停止，不删除",
-        "docker start {container}",
+        "docker stop {target}  # 先停止，不删除",
+        "docker start {target}",
+    ),
+    "git reset --hard": (
+        "git stash  # 暂存修改，可恢复",
+        "git stash pop",
+    ),
+    "git push --force": (
+        "git push --force-with-lease  # 更安全的强制推送",
+        None,
+    ),
+}
+
+_WINDOWS_ALTERNATIVES: dict[str, tuple[str, str]] = {
+    "del ": (
+        'Move-Item {target} "$env:TEMP\\.ai-terminal-trash\\"  # 移到回收站',
+        'Move-Item "$env:TEMP\\.ai-terminal-trash\\{basename}" {target}',
+    ),
+    "Remove-Item": (
+        'Move-Item {target} "$env:TEMP\\.ai-terminal-trash\\"  # 移到回收站',
+        'Move-Item "$env:TEMP\\.ai-terminal-trash\\{basename}" {target}',
+    ),
+    "rd ": (
+        'Move-Item {target} "$env:TEMP\\.ai-terminal-trash\\"  # 移到回收站',
+        'Move-Item "$env:TEMP\\.ai-terminal-trash\\{basename}" {target}',
+    ),
+    "docker rm": (
+        "docker stop {target}  # 先停止，不删除",
+        "docker start {target}",
     ),
     "git reset --hard": (
         "git stash  # 暂存修改，可恢复",
@@ -191,8 +408,34 @@ _ALTERNATIVES: dict[str, tuple[str, str]] = {
 }
 
 
+# ── 获取当前平台的模式列表 ──────────────────────────────────────────
+
+def _get_patterns() -> dict[str, list]:
+    """根据当前平台返回对应的模式列表。"""
+    if _is_windows():
+        return {
+            "safe": _SAFE_WINDOWS,
+            "low": _LOW_WINDOWS,
+            "high": _HIGH_WINDOWS,
+            "critical": _CRITICAL_WINDOWS,
+            "alternatives": _WINDOWS_ALTERNATIVES,
+        }
+    else:
+        # Linux 和 macOS 共用大部分模式
+        safe = _SAFE_UNIX[:]
+        if sys.platform == "darwin":
+            safe.extend(_SAFE_MACOS_EXTRA)
+        return {
+            "safe": safe,
+            "low": _LOW_UNIX,
+            "high": _HIGH_UNIX,
+            "critical": _CRITICAL_UNIX,
+            "alternatives": _UNIX_ALTERNATIVES,
+        }
+
+
 class SafetyPolicy:
-    """安全策略引擎。"""
+    """安全策略引擎（跨平台）。"""
 
     def __init__(self, config: dict | None = None):
         config = config or {}
@@ -203,6 +446,9 @@ class SafetyPolicy:
         self.max_batch_size = config.get("max_batch_size", 5)
         self.command_timeout = config.get("command_timeout", 30)
         self.trash_dir = config.get("trash_dir", "~/.ai-terminal/trash")
+
+        # 加载平台相关模式
+        self._patterns = _get_patterns()
 
         # 自定义规则
         self._custom_rules: list[tuple[re.Pattern, RiskLevel]] = []
@@ -221,26 +467,27 @@ class SafetyPolicy:
             if pattern.search(cmd):
                 return level
 
-        # 黑名单直接 CRITICAL
+        # 白名单直接 SAFE
         if cmd in self.whitelist:
             return RiskLevel.SAFE
 
-        # 按优先级匹配
-        for pattern in _CRITICAL_PATTERNS:
+        # 按优先级匹配：CRITICAL > HIGH > SAFE > LOW
+        # SAFE 在 LOW 之前，因为有些命令同时匹配两者（如 git branch）
+        for pattern in self._patterns["critical"]:
             if pattern.search(cmd):
                 return RiskLevel.CRITICAL
 
-        for pattern in _HIGH_PATTERNS:
+        for pattern in self._patterns["high"]:
             if pattern.search(cmd):
                 return RiskLevel.HIGH
 
-        for pattern in _LOW_PATTERNS:
-            if pattern.search(cmd):
-                return RiskLevel.LOW
-
-        for pattern in _SAFE_PATTERNS:
+        for pattern in self._patterns["safe"]:
             if pattern.search(cmd):
                 return RiskLevel.SAFE
+
+        for pattern in self._patterns["low"]:
+            if pattern.search(cmd):
+                return RiskLevel.LOW
 
         # 未知命令默认 HIGH
         return RiskLevel.HIGH
@@ -302,9 +549,9 @@ class SafetyPolicy:
 
     def _suggest_alternative(self, command: str) -> tuple[str | None, str | None]:
         """根据命令生成替代方案。"""
-        for key, (alt, rollback) in _ALTERNATIVES.items():
+        alternatives = self._patterns["alternatives"]
+        for key, (alt, rollback) in alternatives.items():
             if key in command:
-                # 尝试提取目标路径
                 target = self._extract_target(command, key)
                 alt_text = alt.format(target=target, basename="") if target else alt
                 rollback_text = rollback.format(target=target, basename="") if rollback else None
@@ -316,7 +563,6 @@ class SafetyPolicy:
         try:
             idx = command.index(prefix)
             rest = command[idx + len(prefix):].strip()
-            # 跳过 flags
             parts = rest.split()
             for part in parts:
                 if not part.startswith("-"):

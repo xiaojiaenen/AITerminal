@@ -24,6 +24,14 @@ from ai_terminal.ui.components import (
     print_hosts,
     print_history,
     print_config,
+    _EMOJI_OK,
+    _EMOJI_FAIL,
+    _EMOJI_WARN,
+    _EMOJI_ROBOT,
+    _EMOJI_LIGHT,
+    _EMOJI_GLOBE,
+    _EMOJI_BYE,
+    _EMOJI_CHART,
 )
 from ai_terminal.ui.prompt import get_prompt
 
@@ -120,7 +128,7 @@ class AITerminal:
                 error_output=result.stderr or result.stdout,
             )
             if incident and incident.root_cause:
-                console.print(f"\n💡 [bold]自动诊断:[/bold] {incident.root_cause}")
+                console.print(f"\n{_EMOJI_LIGHT} [bold]自动诊断:[/bold] {incident.root_cause}")
                 if incident.solution:
                     console.print(f"   [green]建议方案:[/green] {incident.solution}")
 
@@ -137,7 +145,7 @@ class AITerminal:
                 console.print("[red]AI 未能生成命令。[/red]")
                 return
 
-            console.print("\n[bold cyan]🤖 AI 建议执行:[/bold cyan]")
+            console.print(f"\n[bold cyan]{_EMOJI_ROBOT} AI 建议执行:[/bold cyan]")
             for cmd in commands:
                 console.print(f"   [green]$[/green] {cmd}")
 
@@ -175,11 +183,11 @@ class AITerminal:
         hosts = inventory.get_hosts(target)
 
         if not hosts:
-            console.print(f"\n[red]❌ 未找到目标主机: {target}[/red]")
+            console.print(f"\n[red]{_EMOJI_FAIL} 未找到目标主机: {target}[/red]")
             console.print("[dim]   使用 /hosts 查看主机清单[/dim]")
             return
 
-        console.print(f"\n[bold cyan]🌐 在 {len(hosts)} 台主机上执行:[/bold cyan] {command}")
+        console.print(f"\n[bold cyan]{_EMOJI_GLOBE} 在 {len(hosts)} 台主机上执行:[/bold cyan] {command}")
         results = await self.remote.run_on_hosts(hosts, command)
 
         results_dicts = [r.to_dict() for r in results]
@@ -199,7 +207,7 @@ class AITerminal:
         cmd = cmd.strip().lower()
 
         if cmd in ("/quit", "/exit", "/q"):
-            console.print("\n[bold cyan]👋 再见！[/bold cyan]")
+            console.print(f"\n[bold cyan]{_EMOJI_BYE} 再见！[/bold cyan]")
             return False
 
         if cmd == "/help":
@@ -207,7 +215,7 @@ class AITerminal:
             return True
 
         if cmd == "/status":
-            console.print("\n[bold]📊 系统状态[/bold]")
+            console.print(f"\n[bold]{_EMOJI_CHART} 系统状态[/bold]")
             console.print(f"   工作目录: [cyan]{self.shell.work_dir}[/cyan]")
             console.print(f"   命令超时: [cyan]{self.shell.timeout}s[/cyan]")
             console.print(f"   安全策略: [cyan]{'启用' if self.config.get('safety.enabled', True) else '禁用'}[/cyan]")
@@ -276,7 +284,7 @@ class AITerminal:
             user_input = self.prompt.get_input(current_mode)
 
             if user_input is None:
-                console.print("\n[bold cyan]👋 再见！[/bold cyan]")
+                console.print(f"\n[bold cyan]{_EMOJI_BYE} 再见！[/bold cyan]")
                 break
 
             user_input = user_input.strip()
@@ -328,7 +336,7 @@ def main() -> None:
         try:
             asyncio.run(app.run())
         except KeyboardInterrupt:
-            console.print("\n[bold cyan]👋 再见！[/bold cyan]")
+            console.print(f"\n[bold cyan]{_EMOJI_BYE} 再见！[/bold cyan]")
             sys.exit(0)
 
 

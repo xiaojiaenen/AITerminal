@@ -1,7 +1,8 @@
-"""Rich UI 组件 — 美化终端输出。"""
+"""Rich UI 组件 — 美化终端输出（跨平台）。"""
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from rich.console import Console
@@ -15,6 +16,39 @@ from rich.tree import Tree
 from rich import box
 
 from ai_terminal.safety.policy import RiskLevel
+
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+# 检测终端是否支持 emoji
+def _supports_emoji() -> bool:
+    """检测终端是否支持 emoji。"""
+    if _is_windows():
+        # Windows Terminal 和 PowerShell 7+ 支持 emoji
+        wt_session = __import__("os").environ.get("WT_SESSION")
+        ps_version = __import__("os").environ.get("PSModulePath")
+        return bool(wt_session or ps_version)
+    return True  # Linux/macOS 通常支持
+
+
+# 根据终端能力选择图标
+_EMOJI_OK = "✅" if _supports_emoji() else "[OK]"
+_EMOJI_FAIL = "❌" if _supports_emoji() else "[FAIL]"
+_EMOJI_WARN = "⚠️" if _supports_emoji() else "[!]"
+_EMOJI_CRIT = "🚨" if _supports_emoji() else "[!!]"
+_EMOJI_INFO = "ℹ️" if _supports_emoji() else "[i]"
+_EMOJI_ROBOT = "🤖" if _supports_emoji() else "[AI]"
+_EMOJI_LIGHT = "💡" if _supports_emoji() else "[*]"
+_EMOJI_SYNC = "🔄" if _supports_emoji() else "[~]"
+_EMOJI_WRENCH = "🔧" if _supports_emoji() else "[#]"
+_EMOJI_CHART = "📊" if _supports_emoji() else "[=]"
+_EMOJI_GLOBE = "🌐" if _supports_emoji() else "[@]"
+_EMOJI_BYE = "👋" if _supports_emoji() else "bye"
+_EMOJI_GEAR = "⚙️" if _supports_emoji() else "[cfg]"
+_EMOJI_SHIELD = "🛡️" if _supports_emoji() else "[safe]"
+_EMOJI_CLOCK = "⏱" if _supports_emoji() else "t"
 
 
 console = Console()
@@ -91,11 +125,11 @@ def print_help() -> None:
     console.print()
     safety_panel = Panel(
         "[bold]安全说明[/bold]\n"
-        "  • 只读命令自动执行，破坏性命令需确认\n"
-        "  • 所有操作记录审计日志\n"
-        "  • 失败命令自动记录并分析根因\n"
-        "  • 推荐安全替代方案",
-        title="🛡️ 安全策略",
+        "  * 只读命令自动执行，破坏性命令需确认\n"
+        "  * 所有操作记录审计日志\n"
+        "  * 失败命令自动记录并分析根因\n"
+        "  * 推荐安全替代方案",
+        title=f"{_EMOJI_SHIELD} 安全策略",
         border_style="green",
     )
     console.print(safety_panel)
@@ -110,10 +144,10 @@ def print_risk_warning(risk_level: RiskLevel, reason: str, alternative: str | No
         RiskLevel.CRITICAL: "red bold",
     }
     icons = {
-        RiskLevel.SAFE: "✅",
-        RiskLevel.LOW: "ℹ️",
-        RiskLevel.HIGH: "⚠️",
-        RiskLevel.CRITICAL: "🚨",
+        RiskLevel.SAFE: _EMOJI_OK,
+        RiskLevel.LOW: _EMOJI_INFO,
+        RiskLevel.HIGH: _EMOJI_WARN,
+        RiskLevel.CRITICAL: _EMOJI_CRIT,
     }
 
     color = colors.get(risk_level, "white")
@@ -122,9 +156,9 @@ def print_risk_warning(risk_level: RiskLevel, reason: str, alternative: str | No
     content = f"[{color}]{icon} 风险等级: {risk_level.value.upper()}[/{color}]\n"
     content += f"   {reason}\n"
     if alternative:
-        content += f"   💡 建议: [green]{alternative}[/green]\n"
+        content += f"   {_EMOJI_LIGHT} 建议: [green]{alternative}[/green]\n"
     if rollback:
-        content += f"   🔄 回滚: [dim]{rollback}[/dim]"
+        content += f"   {_EMOJI_SYNC} 回滚: [dim]{rollback}[/dim]"
 
     border_color = "red" if risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL) else "yellow"
     panel = Panel(content, title="安全检查", border_style=border_color)
@@ -160,9 +194,9 @@ def print_command_result(
 
     # 状态栏
     status_color = "green" if exit_code == 0 else "red"
-    status_icon = "✅" if exit_code == 0 else "❌"
+    status_icon = _EMOJI_OK if exit_code == 0 else _EMOJI_FAIL
     duration_str = f"{duration_ms}ms" if duration_ms < 1000 else f"{duration_ms / 1000:.1f}s"
-    console.print(f"[dim]{status_icon} exit={exit_code}  ⏱ {duration_str}[/dim]")
+    console.print(f"[dim]{status_icon} exit={exit_code}  {_EMOJI_CLOCK} {duration_str}[/dim]")
 
 
 def print_remote_results(results: list[dict]) -> None:
@@ -188,7 +222,7 @@ def print_remote_results(results: list[dict]) -> None:
         stderr = r.get("stderr", "").strip()[:100]
         error = r.get("error", "")
 
-        status = "[green]✅ 成功[/green]" if success else "[red]❌ 失败[/red]"
+        status = f"[green]{_EMOJI_OK} 成功[/green]" if success else f"[red]{_EMOJI_FAIL} 失败[/red]"
         duration_str = f"{duration}ms" if duration < 1000 else f"{duration / 1000:.1f}s"
         output = stdout if success else (stderr or error)
 
@@ -199,9 +233,9 @@ def print_remote_results(results: list[dict]) -> None:
     success_count = sum(1 for r in results if r.get("success"))
     total = len(results)
     if success_count == total:
-        console.print(f"[green]✅ 全部成功 ({total}/{total})[/green]")
+        console.print(f"[green]{_EMOJI_OK} 全部成功 ({total}/{total})[/green]")
     else:
-        console.print(f"[yellow]⚠️ {success_count}/{total} 成功[/yellow]")
+        console.print(f"[yellow]{_EMOJI_WARN} {success_count}/{total} 成功[/yellow]")
 
 
 def print_incident(incident: dict) -> None:
@@ -221,7 +255,7 @@ def print_incident(incident: dict) -> None:
         content += f"\n[bold]标签[/bold]: {', '.join(tags)}"
 
     border = "green" if incident.get("resolved") else "red"
-    console.print(Panel(content, title=f"🔧 踩坑记录 {incident.get('id', '')}", border_style=border))
+    console.print(Panel(content, title=f"{_EMOJI_WRENCH} 踩坑记录 {incident.get('id', '')}", border_style=border))
 
 
 def print_incident_stats(stats: dict) -> None:
@@ -317,7 +351,7 @@ def print_history(entries: list[dict]) -> None:
 
 def print_config(config_data: dict) -> None:
     """打印配置信息。"""
-    tree = Tree("⚙️ 配置")
+    tree = Tree(f"{_EMOJI_GEAR} 配置")
     for section, values in config_data.items():
         branch = tree.add(f"[bold]{section}[/bold]")
         if isinstance(values, dict):

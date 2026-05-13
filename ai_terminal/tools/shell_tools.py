@@ -1,14 +1,34 @@
-"""本地 Shell 工具 — 执行本地命令。"""
+"""本地 Shell 工具 — 执行本地命令（跨平台）。"""
 
 from __future__ import annotations
 
 import asyncio
 import os
-import shlex
+import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
+
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+def _get_shell_command(command: str) -> tuple[str, bool]:
+    """根据平台返回 shell 执行方式。
+
+    Returns:
+        (shell_command, use_shell) 元组
+    """
+    if _is_windows():
+        # Windows: 优先用 PowerShell，回退到 cmd
+        pwsh = os.environ.get("SHELL", "").endswith("pwsh") or os.environ.get("PSModulePath")
+        if pwsh:
+            return f'pwsh -NoProfile -Command "{command}"', False
+        else:
+            return f'powershell -NoProfile -Command "{command}"', False
+    else:
+        return command, True
 
 
 @dataclass
@@ -38,7 +58,7 @@ class ShellResult:
 
 
 class ShellExecutor:
-    """本地命令执行器。"""
+    """本地命令执行器（跨平台）。"""
 
     def __init__(
         self,
@@ -65,9 +85,12 @@ class ShellExecutor:
         start = time.monotonic()
         timed_out = False
 
+        # 跨平台 shell 命令构造
+        shell_cmd, use_shell = _get_shell_command(command)
+
         try:
             process = await asyncio.create_subprocess_shell(
-                command,
+                shell_cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=effective_dir,
@@ -122,7 +145,7 @@ class ShellExecutor:
                 result = await self.run(cmd, timeout=timeout)
                 results.append(result)
                 if not result.success:
-                    break  # 串行模式下失败即停止
+                    break
             return results
 
     async def run_pipeline(
@@ -130,13 +153,18 @@ class ShellExecutor:
         commands: list[str],
         timeout: int | None = None,
     ) -> ShellResult:
-        """管道执行：上一条的 stdout 作为下一条的 stdin。"""
+        """管道执行：多个命令用管道连接。"""
         if not commands:
             return ShellResult(command="", exit_code=0, stdout="", stderr="", duration_ms=0)
 
-        # 用 shell 管道语法连接
-        pipeline_cmd = " | ".join(commands)
-        return await self.run(pipeline_cmd, timeout=timeout)
+        if _is_windows():
+            # Windows PowerShell 管道
+            pipeline_cmd = " | ".join(commands)
+            return await self.run(pipeline_cmd, timeout=timeout)
+        else:
+            # Unix shell 管道
+            pipeline_cmd = " | ".join(commands)
+            return await self.run(pipeline_cmd, timeout=timeout)
 
 
 def register_shell_tools(registry: Any, shell_executor: ShellExecutor | None = None) -> None:
@@ -145,7 +173,7 @@ def register_shell_tools(registry: Any, shell_executor: ShellExecutor | None = N
 
     @registry.tool(
         name="run_command",
-        description="在本地终端执行命令。返回 stdout、stderr 和退出码。",
+        description="在本地终端执行命令。返回 stdout、stderr 和退出码。支持 Windows/Linux/macOS。",
     )
     async def run_command(
         command: str,
