@@ -355,7 +355,8 @@ def main() -> None:
     app = AITerminal(config)
 
     if args.command:
-        asyncio.run(app.execute_direct(args.command))
+        mode, content = detect_mode(args.command)
+        asyncio.run(app.execute_direct(content))
     else:
         try:
             asyncio.run(app.run())
