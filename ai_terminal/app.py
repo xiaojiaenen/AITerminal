@@ -12,6 +12,20 @@ from ai_terminal.safety.audit import AuditLogger, AuditAction
 from ai_terminal.tools.shell_tools import ShellExecutor
 from ai_terminal.cluster.remote import RemoteExecutor
 from ai_terminal.runtime.incident import IncidentRecorder
+from ai_terminal.ui.components import (
+    console,
+    print_banner,
+    print_help,
+    print_risk_warning,
+    print_command_result,
+    print_remote_results,
+    print_incident,
+    print_incident_stats,
+    print_hosts,
+    print_history,
+    print_config,
+)
+from ai_terminal.ui.prompt import get_prompt
 
 
 # 输入模式
@@ -44,6 +58,7 @@ class AITerminal:
             timeout=self.config.get("cluster.command_timeout", 60),
         )
         self.incidents = IncidentRecorder()
+        self.prompt = get_prompt()
         self._agent = None  # 延迟初始化
         self._running = False
 
@@ -54,67 +69,22 @@ class AITerminal:
             self._agent = AITerminalAgent(self.config, self.policy, self.audit)
         return self._agent
 
-    def print_banner(self) -> None:
-        """打印启动横幅。"""
-        banner = """
-╔══════════════════════════════════════════════╗
-║           AI Terminal 智能终端管家            ║
-║──────────────────────────────────────────────║
-║  自然语言 → 安全执行 → 智能运维              ║
-║                                              ║
-║  输入模式：                                   ║
-║    无前缀  AI 对话   "看看磁盘使用率"         ║
-║    !      直接执行   !docker ps               ║
-║    >      混合模式   > 清理日志               ║
-║    /help  帮助信息                            ║
-║    /quit  退出                                ║
-╚══════════════════════════════════════════════╝
-"""
-        print(banner)
-
-    def print_help(self) -> None:
-        """打印帮助信息。"""
-        help_text = """
-AI Terminal 命令：
-
-  输入模式：
-    <文本>       AI 对话模式 — 描述需求，AI 生成命令
-    !<命令>      直接执行模式 — 跳过 AI，直接运行
-    ><描述>      混合模式 — AI 生成命令，确认后执行
-
-  快捷命令：
-    /help        显示此帮助
-    /status      显示系统状态
-    /history     显示执行历史
-    /stats       显示审计统计
-    /config      显示当前配置
-    /incidents   查看踩坑记录
-    /hosts       查看主机清单
-    /quit        退出程序
-
-  安全说明：
-    只读命令自动执行，破坏性命令需确认
-    所有操作记录审计日志
-    失败命令自动记录并分析根因
-"""
-        print(help_text)
-
     async def execute_direct(self, command: str) -> None:
         """直接执行模式。"""
         decision = self.policy.check(command)
 
         if decision.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
-            print(f"\n⚠️  风险等级: {decision.risk_level.value}")
-            print(f"   {decision.reason}")
-            if decision.alternative:
-                print(f"   建议: {decision.alternative}")
-            if decision.rollback_command:
-                print(f"   回滚: {decision.rollback_command}")
+            print_risk_warning(
+                decision.risk_level,
+                decision.reason,
+                decision.alternative,
+                decision.rollback_command,
+            )
 
             try:
-                confirm = input("\n继续执行？(y/N): ").strip().lower()
+                confirm = console.input("\n[bold]继续执行？(y/N):[/bold] ").strip().lower()
                 if confirm not in ("y", "yes"):
-                    print("已取消。")
+                    console.print("[yellow]已取消。[/yellow]")
                     self.audit.log_execution(
                         command=command,
                         risk_level=decision.risk_level,
@@ -122,19 +92,18 @@ AI Terminal 命令：
                     )
                     return
             except (EOFError, KeyboardInterrupt):
-                print("\n已取消。")
+                console.print("\n[yellow]已取消。[/yellow]")
                 return
 
-        print(f"\n$ {command}")
         result = await self.shell.run(command)
 
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(f"\033[31m{result.stderr}\033[0m", end="")
-
-        if result.timed_out:
-            print(f"\n⏰ 命令超时 ({self.shell.timeout}s)")
+        print_command_result(
+            command=command,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.exit_code,
+            duration_ms=result.duration_ms,
+        )
 
         self.audit.log_execution(
             command=command,
@@ -151,9 +120,9 @@ AI Terminal 命令：
                 error_output=result.stderr or result.stdout,
             )
             if incident and incident.root_cause:
-                print(f"\n💡 自动诊断: {incident.root_cause}")
+                console.print(f"\n💡 [bold]自动诊断:[/bold] {incident.root_cause}")
                 if incident.solution:
-                    print(f"   建议方案: {incident.solution}")
+                    console.print(f"   [green]建议方案:[/green] {incident.solution}")
 
     async def execute_hybrid(self, description: str) -> None:
         """混合模式 — AI 生成命令，用户确认后执行。"""
@@ -163,43 +132,42 @@ AI Terminal 命令：
                 f"用户需要: {description}\n"
                 "请只输出要执行的 shell 命令，不要解释。如果需要多条命令，每行一条。"
             )
-            # 提取命令（取第一行非空内容）
             commands = [line.strip() for line in response.strip().split("\n") if line.strip()]
             if not commands:
-                print("AI 未能生成命令。")
+                console.print("[red]AI 未能生成命令。[/red]")
                 return
 
-            print(f"\n🤖 AI 建议执行:")
+            console.print("\n[bold cyan]🤖 AI 建议执行:[/bold cyan]")
             for cmd in commands:
-                print(f"   $ {cmd}")
+                console.print(f"   [green]$[/green] {cmd}")
 
             try:
-                confirm = input("\n确认执行？(y/N/edit): ").strip().lower()
+                confirm = console.input("\n[bold]确认执行？(y/N/edit):[/bold] ").strip().lower()
                 if confirm == "y":
                     for cmd in commands:
                         await self.execute_direct(cmd)
                 elif confirm == "edit":
-                    edited = input("请输入修改后的命令: ").strip()
+                    edited = console.input("[bold]请输入修改后的命令:[/bold] ").strip()
                     if edited:
                         await self.execute_direct(edited)
                 else:
-                    print("已取消。")
+                    console.print("[yellow]已取消。[/yellow]")
             except (EOFError, KeyboardInterrupt):
-                print("\n已取消。")
+                console.print("\n[yellow]已取消。[/yellow]")
 
         except Exception as e:
-            print(f"\nAI 调用失败: {e}")
-            print("请使用 ! 前缀直接执行命令。")
+            console.print(f"\n[red]AI 调用失败: {e}[/red]")
+            console.print("[dim]请使用 ! 前缀直接执行命令。[/dim]")
 
     async def handle_ai_chat(self, user_input: str) -> None:
         """AI 对话模式。"""
         try:
             agent = self._get_agent()
             response = await agent.chat(user_input)
-            print(f"\n{response}")
+            console.print(f"\n{response}")
         except Exception as e:
-            print(f"\nAI 调用失败: {e}")
-            print("提示: 设置 OPENAI_API_KEY 环境变量，或使用 ! 前缀直接执行命令。")
+            console.print(f"\n[red]AI 调用失败: {e}[/red]")
+            console.print("[dim]提示: 设置 OPENAI_API_KEY 环境变量，或使用 ! 前缀直接执行命令。[/dim]")
 
     async def execute_remote(self, command: str, target: str = "all") -> None:
         """远程执行命令。"""
@@ -207,26 +175,15 @@ AI Terminal 命令：
         hosts = inventory.get_hosts(target)
 
         if not hosts:
-            print(f"\n❌ 未找到目标主机: {target}")
-            print("   使用 /hosts 查看主机清单")
+            console.print(f"\n[red]❌ 未找到目标主机: {target}[/red]")
+            console.print("[dim]   使用 /hosts 查看主机清单[/dim]")
             return
 
-        print(f"\n🌐 在 {len(hosts)} 台主机上执行: {command}")
+        console.print(f"\n[bold cyan]🌐 在 {len(hosts)} 台主机上执行:[/bold cyan] {command}")
         results = await self.remote.run_on_hosts(hosts, command)
 
-        for r in results:
-            status = "✅" if r.success else "❌"
-            print(f"\n  {status} [{r.host}]")
-            if r.stdout:
-                for line in r.stdout.strip().split("\n")[:20]:
-                    print(f"     {line}")
-            if r.stderr:
-                print(f"     \033[31m{r.stderr[:200]}\033[0m")
-            if r.error:
-                print(f"     \033[31m错误: {r.error}\033[0m")
-
-        success_count = sum(1 for r in results if r.success)
-        print(f"\n  汇总: {success_count}/{len(results)} 成功")
+        results_dicts = [r.to_dict() for r in results]
+        print_remote_results(results_dicts)
 
         for r in results:
             self.audit.log_execution(
@@ -242,97 +199,87 @@ AI Terminal 命令：
         cmd = cmd.strip().lower()
 
         if cmd in ("/quit", "/exit", "/q"):
-            print("\n👋 再见！")
+            console.print("\n[bold cyan]👋 再见！[/bold cyan]")
             return False
 
         if cmd == "/help":
-            self.print_help()
+            print_help()
             return True
 
         if cmd == "/status":
-            print("\n📊 系统状态")
-            print(f"   工作目录: {self.shell.work_dir}")
-            print(f"   命令超时: {self.shell.timeout}s")
-            print(f"   安全策略: {'启用' if self.config.get('safety.enabled', True) else '禁用'}")
-            print(f"   主机数量: {len(self.config.load_inventory().hosts)}")
+            console.print("\n[bold]📊 系统状态[/bold]")
+            console.print(f"   工作目录: [cyan]{self.shell.work_dir}[/cyan]")
+            console.print(f"   命令超时: [cyan]{self.shell.timeout}s[/cyan]")
+            console.print(f"   安全策略: [cyan]{'启用' if self.config.get('safety.enabled', True) else '禁用'}[/cyan]")
+            console.print(f"   主机数量: [cyan]{len(self.config.load_inventory().hosts)}[/cyan]")
             return True
 
         if cmd == "/history":
             entries = self.audit.get_recent(20)
-            if not entries:
-                print("\n暂无执行历史。")
-            else:
-                print(f"\n📜 最近 {len(entries)} 条记录:")
-                for e in entries:
-                    action = e.get("action", "?")
-                    cmd_str = e.get("command", "")[:50]
-                    risk = e.get("risk_level", "?")
-                    target = e.get("target", "local")
-                    print(f"   [{action:10s}] [{risk:8s}] [{target:6s}] {cmd_str}")
+            print_history(entries)
             return True
 
         if cmd == "/stats":
             stats = self.audit.get_stats()
-            print(f"\n📊 审计统计")
-            print(f"   总命令数: {stats.get('total_commands', 0)}")
-            print(f"   按操作: {stats.get('by_action', {})}")
-            print(f"   按风险: {stats.get('by_risk_level', {})}")
+            console.print(f"\n[bold]📊 审计统计[/bold]")
+            console.print(f"   总命令数: [cyan]{stats.get('total_commands', 0)}[/cyan]")
+            console.print(f"   按操作: [cyan]{stats.get('by_action', {})}[/cyan]")
+            console.print(f"   按风险: [cyan]{stats.get('by_risk_level', {})}[/cyan]")
 
             inc_stats = self.incidents.get_stats()
-            print(f"\n📊 踩坑统计")
-            print(f"   总记录: {inc_stats.get('total', 0)}")
-            print(f"   已解决: {inc_stats.get('resolved', 0)}")
-            print(f"   未解决: {inc_stats.get('unresolved', 0)}")
-            print(f"   已生成 Skill: {inc_stats.get('skills_generated', 0)}")
+            print_incident_stats(inc_stats)
             return True
 
         if cmd == "/config":
-            print("\n⚙️  当前配置:")
+            config_data = {}
             for key in ["general", "safety", "llm", "cluster"]:
-                print(f"   {key}: {self.config.get(key, {})}")
+                config_data[key] = self.config.get(key, {})
+            print_config(config_data)
             return True
 
         if cmd == "/incidents":
             incidents = self.incidents.get_recent(10)
             if not incidents:
-                print("\n暂无踩坑记录。")
+                console.print("\n[dim]暂无踩坑记录。[/dim]")
             else:
-                print(f"\n🔧 最近 {len(incidents)} 条踩坑记录:")
+                console.print(f"\n[bold]🔧 最近 {len(incidents)} 条踩坑记录:[/bold]")
                 for inc in incidents:
-                    status = "✅" if inc.resolved else "❌"
-                    print(f"   {status} [{inc.id}] {inc.root_cause or inc.command[:40]}")
-                    if inc.solution:
-                        print(f"      方案: {inc.solution[:60]}")
+                    print_incident(inc.to_dict())
             return True
 
         if cmd == "/hosts":
             inventory = self.config.load_inventory()
-            if not inventory.hosts:
-                print("\n未配置主机。编辑 ~/.ai-terminal/inventory.yaml 添加主机。")
-            else:
-                print(f"\n🖥️  主机清单 ({len(inventory.hosts)} 台):")
-                for h in inventory.hosts:
-                    tags = f" [{', '.join(h.tags)}]" if h.tags else ""
-                    print(f"   {h.name:15s} {h.hostname}:{h.port} ({h.user}){tags}")
-                if inventory.groups:
-                    print(f"\n   分组: {list(inventory.groups.keys())}")
+            hosts_data = [
+                {
+                    "name": h.name,
+                    "hostname": h.hostname,
+                    "port": h.port,
+                    "user": h.user,
+                    "tags": h.tags,
+                }
+                for h in inventory.hosts
+            ]
+            print_hosts(hosts_data, inventory.groups)
             return True
 
-        print(f"未知命令: {cmd}，输入 /help 查看帮助")
+        console.print(f"[red]未知命令: {cmd}[/red]，输入 [bold]/help[/bold] 查看帮助")
         return True
 
     async def run(self) -> None:
         """主运行循环。"""
-        self.print_banner()
+        print_banner()
 
+        current_mode = "ai"
         self._running = True
+
         while self._running:
-            try:
-                user_input = input("\n❯ ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\n👋 再见！")
+            user_input = self.prompt.get_input(current_mode)
+
+            if user_input is None:
+                console.print("\n[bold cyan]👋 再见！[/bold cyan]")
                 break
 
+            user_input = user_input.strip()
             if not user_input:
                 continue
 
@@ -346,6 +293,8 @@ AI Terminal 命令：
             mode, content = detect_mode(user_input)
             if not content:
                 continue
+
+            current_mode = mode
 
             if mode == MODE_DIRECT:
                 await self.execute_direct(content)
@@ -374,13 +323,12 @@ def main() -> None:
     app = AITerminal(config)
 
     if args.command:
-        # 单次执行模式
         asyncio.run(app.execute_direct(args.command))
     else:
         try:
             asyncio.run(app.run())
         except KeyboardInterrupt:
-            print("\n👋 再见！")
+            console.print("\n[bold cyan]👋 再见！[/bold cyan]")
             sys.exit(0)
 
 
