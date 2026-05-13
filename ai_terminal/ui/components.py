@@ -16,6 +16,7 @@ from rich.syntax import Syntax
 from rich.columns import Columns
 from rich.markdown import Markdown
 from rich.tree import Tree
+from rich.markup import escape
 from rich import box
 
 from ai_terminal.safety.policy import RiskLevel
@@ -393,15 +394,15 @@ def print_history(entries: list[dict]) -> None:
         time_str = e.get("timestamp", "")[11:19]  # HH:MM:SS
         risk = e.get("risk_level", "?")
 
-        # 单行摘要
+        # 单行摘要（转义用户数据避免 Rich 标签冲突）
         line = f"  [{i:>2}] {status} [{color}{action}[/{color}] "
         line += f"[[dim]{time_str}[/dim]] "
-        line += f"[cyan]{cmd}[/cyan]"
+        line += f"[cyan]{escape(cmd)}[/cyan]"
 
         # 如果有输出，追加截断预览
         if output:
             preview = _truncate(output, 100).replace("\n", " ")
-            line += f"\n      输出: [dim]{preview}[/dim]"
+            line += f"\n      输出: [dim]{escape(preview)}[/dim]"
 
         console.print(line)
 
@@ -411,7 +412,7 @@ def print_history(entries: list[dict]) -> None:
 def print_history_detail(entry: dict) -> None:
     """打印单条历史记录详情（完整输出）。"""
     console.print()
-    console.print(f"[bold]命令:[/bold] [cyan]{entry.get('command', '')}[/cyan]")
+    console.print(f"[bold]命令:[/bold] [cyan]{escape(entry.get('command', ''))}[/cyan]")
     console.print(f"[bold]时间:[/bold] {entry.get('timestamp', '')}")
     console.print(f"[bold]风险:[/bold] {entry.get('risk_level', '?')}")
     console.print(f"[bold]目标:[/bold] {entry.get('target', 'local')}")
