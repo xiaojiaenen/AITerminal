@@ -8,8 +8,10 @@ from typing import Any
 
 from ai_terminal.config import Config
 from ai_terminal.safety.policy import SafetyPolicy, RiskLevel
-from ai_terminal.safety.audit import AuditLogger
+from ai_terminal.safety.audit import AuditLogger, AuditAction
 from ai_terminal.tools.shell_tools import ShellExecutor
+from ai_terminal.cluster.remote import RemoteExecutor
+from ai_terminal.runtime.incident import IncidentRecorder
 
 
 # 输入模式
@@ -28,27 +30,6 @@ def detect_mode(user_input: str) -> tuple[str, str]:
     return MODE_AI, stripped
 
 
-# 系统提示词
-SYSTEM_PROMPT = """你是 AI Terminal 智能终端管家。你可以：
-
-1. **直接执行命令** — 用户用 `!` 前缀直接执行 shell 命令
-2. **AI 对话** — 用户用自然语言描述需求，你生成并执行命令
-3. **混合模式** — 用户用 `>` 前缀，你生成命令但需用户确认后执行
-
-安全规则：
-- SAFE 级别（只读）自动执行
-- LOW 级别（可逆写入）自动执行
-- HIGH 级别（破坏性）需用户确认
-- CRITICAL 级别（不可逆）需二次确认
-- 优先推荐安全替代方案
-
-回复风格：
-- 简洁直接，不过度解释
-- 命令执行结果用代码块展示
-- 出错时给出修复建议
-"""
-
-
 class AITerminal:
     """AI Terminal 主应用。"""
 
@@ -59,7 +40,19 @@ class AITerminal:
         self.shell = ShellExecutor(
             timeout=self.config.get("safety.command_timeout", 30),
         )
+        self.remote = RemoteExecutor(
+            timeout=self.config.get("cluster.command_timeout", 60),
+        )
+        self.incidents = IncidentRecorder()
+        self._agent = None  # 延迟初始化
         self._running = False
+
+    def _get_agent(self):
+        """延迟初始化 AI Agent。"""
+        if self._agent is None:
+            from ai_terminal.agent import AITerminalAgent
+            self._agent = AITerminalAgent(self.config, self.policy, self.audit)
+        return self._agent
 
     def print_banner(self) -> None:
         """打印启动横幅。"""
@@ -95,17 +88,19 @@ AI Terminal 命令：
     /history     显示执行历史
     /stats       显示审计统计
     /config      显示当前配置
+    /incidents   查看踩坑记录
+    /hosts       查看主机清单
     /quit        退出程序
 
   安全说明：
     只读命令自动执行，破坏性命令需确认
     所有操作记录审计日志
+    失败命令自动记录并分析根因
 """
         print(help_text)
 
     async def execute_direct(self, command: str) -> None:
         """直接执行模式。"""
-        # 安全检查
         decision = self.policy.check(command)
 
         if decision.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
@@ -113,6 +108,8 @@ AI Terminal 命令：
             print(f"   {decision.reason}")
             if decision.alternative:
                 print(f"   建议: {decision.alternative}")
+            if decision.rollback_command:
+                print(f"   回滚: {decision.rollback_command}")
 
             try:
                 confirm = input("\n继续执行？(y/N): ").strip().lower()
@@ -121,14 +118,13 @@ AI Terminal 命令：
                     self.audit.log_execution(
                         command=command,
                         risk_level=decision.risk_level,
-                        action="denied",
+                        action=AuditAction.DENIED,
                     )
                     return
             except (EOFError, KeyboardInterrupt):
                 print("\n已取消。")
                 return
 
-        # 执行
         print(f"\n$ {command}")
         result = await self.shell.run(command)
 
@@ -147,26 +143,99 @@ AI Terminal 命令：
             duration_ms=result.duration_ms,
         )
 
+        # 失败时自动记录踩坑
+        if not result.success:
+            incident = self.incidents.record(
+                command=command,
+                exit_code=result.exit_code,
+                error_output=result.stderr or result.stdout,
+            )
+            if incident and incident.root_cause:
+                print(f"\n💡 自动诊断: {incident.root_cause}")
+                if incident.solution:
+                    print(f"   建议方案: {incident.solution}")
+
     async def execute_hybrid(self, description: str) -> None:
         """混合模式 — AI 生成命令，用户确认后执行。"""
-        # 这里简化实现，实际应该调用 LLM 生成命令
-        print(f"\n🤖 AI 分析: {description}")
-        print("   （LLM 集成后会自动生成命令）")
-
         try:
-            command = input("\n请输入要执行的命令: ").strip()
-            if not command:
-                print("已取消。")
+            agent = self._get_agent()
+            response = await agent.chat(
+                f"用户需要: {description}\n"
+                "请只输出要执行的 shell 命令，不要解释。如果需要多条命令，每行一条。"
+            )
+            # 提取命令（取第一行非空内容）
+            commands = [line.strip() for line in response.strip().split("\n") if line.strip()]
+            if not commands:
+                print("AI 未能生成命令。")
                 return
-            await self.execute_direct(command)
-        except (EOFError, KeyboardInterrupt):
-            print("\n已取消。")
+
+            print(f"\n🤖 AI 建议执行:")
+            for cmd in commands:
+                print(f"   $ {cmd}")
+
+            try:
+                confirm = input("\n确认执行？(y/N/edit): ").strip().lower()
+                if confirm == "y":
+                    for cmd in commands:
+                        await self.execute_direct(cmd)
+                elif confirm == "edit":
+                    edited = input("请输入修改后的命令: ").strip()
+                    if edited:
+                        await self.execute_direct(edited)
+                else:
+                    print("已取消。")
+            except (EOFError, KeyboardInterrupt):
+                print("\n已取消。")
+
+        except Exception as e:
+            print(f"\nAI 调用失败: {e}")
+            print("请使用 ! 前缀直接执行命令。")
 
     async def handle_ai_chat(self, user_input: str) -> None:
         """AI 对话模式。"""
-        print(f"\n🤖 AI 对话: {user_input}")
-        print("   （LLM 集成后会自动处理）")
-        print("   当前仅支持直接执行（!）和混合模式（>）")
+        try:
+            agent = self._get_agent()
+            response = await agent.chat(user_input)
+            print(f"\n{response}")
+        except Exception as e:
+            print(f"\nAI 调用失败: {e}")
+            print("提示: 设置 OPENAI_API_KEY 环境变量，或使用 ! 前缀直接执行命令。")
+
+    async def execute_remote(self, command: str, target: str = "all") -> None:
+        """远程执行命令。"""
+        inventory = self.config.load_inventory()
+        hosts = inventory.get_hosts(target)
+
+        if not hosts:
+            print(f"\n❌ 未找到目标主机: {target}")
+            print("   使用 /hosts 查看主机清单")
+            return
+
+        print(f"\n🌐 在 {len(hosts)} 台主机上执行: {command}")
+        results = await self.remote.run_on_hosts(hosts, command)
+
+        for r in results:
+            status = "✅" if r.success else "❌"
+            print(f"\n  {status} [{r.host}]")
+            if r.stdout:
+                for line in r.stdout.strip().split("\n")[:20]:
+                    print(f"     {line}")
+            if r.stderr:
+                print(f"     \033[31m{r.stderr[:200]}\033[0m")
+            if r.error:
+                print(f"     \033[31m错误: {r.error}\033[0m")
+
+        success_count = sum(1 for r in results if r.success)
+        print(f"\n  汇总: {success_count}/{len(results)} 成功")
+
+        for r in results:
+            self.audit.log_execution(
+                command=command,
+                risk_level=RiskLevel.SAFE,
+                exit_code=r.exit_code,
+                duration_ms=r.duration_ms,
+                target=r.host,
+            )
 
     async def handle_command(self, cmd: str) -> bool:
         """处理快捷命令。返回 False 表示退出。"""
@@ -185,6 +254,7 @@ AI Terminal 命令：
             print(f"   工作目录: {self.shell.work_dir}")
             print(f"   命令超时: {self.shell.timeout}s")
             print(f"   安全策略: {'启用' if self.config.get('safety.enabled', True) else '禁用'}")
+            print(f"   主机数量: {len(self.config.load_inventory().hosts)}")
             return True
 
         if cmd == "/history":
@@ -197,7 +267,8 @@ AI Terminal 命令：
                     action = e.get("action", "?")
                     cmd_str = e.get("command", "")[:50]
                     risk = e.get("risk_level", "?")
-                    print(f"   [{action:10s}] [{risk:8s}] {cmd_str}")
+                    target = e.get("target", "local")
+                    print(f"   [{action:10s}] [{risk:8s}] [{target:6s}] {cmd_str}")
             return True
 
         if cmd == "/stats":
@@ -206,12 +277,45 @@ AI Terminal 命令：
             print(f"   总命令数: {stats.get('total_commands', 0)}")
             print(f"   按操作: {stats.get('by_action', {})}")
             print(f"   按风险: {stats.get('by_risk_level', {})}")
+
+            inc_stats = self.incidents.get_stats()
+            print(f"\n📊 踩坑统计")
+            print(f"   总记录: {inc_stats.get('total', 0)}")
+            print(f"   已解决: {inc_stats.get('resolved', 0)}")
+            print(f"   未解决: {inc_stats.get('unresolved', 0)}")
+            print(f"   已生成 Skill: {inc_stats.get('skills_generated', 0)}")
             return True
 
         if cmd == "/config":
             print("\n⚙️  当前配置:")
             for key in ["general", "safety", "llm", "cluster"]:
                 print(f"   {key}: {self.config.get(key, {})}")
+            return True
+
+        if cmd == "/incidents":
+            incidents = self.incidents.get_recent(10)
+            if not incidents:
+                print("\n暂无踩坑记录。")
+            else:
+                print(f"\n🔧 最近 {len(incidents)} 条踩坑记录:")
+                for inc in incidents:
+                    status = "✅" if inc.resolved else "❌"
+                    print(f"   {status} [{inc.id}] {inc.root_cause or inc.command[:40]}")
+                    if inc.solution:
+                        print(f"      方案: {inc.solution[:60]}")
+            return True
+
+        if cmd == "/hosts":
+            inventory = self.config.load_inventory()
+            if not inventory.hosts:
+                print("\n未配置主机。编辑 ~/.ai-terminal/inventory.yaml 添加主机。")
+            else:
+                print(f"\n🖥️  主机清单 ({len(inventory.hosts)} 台):")
+                for h in inventory.hosts:
+                    tags = f" [{', '.join(h.tags)}]" if h.tags else ""
+                    print(f"   {h.name:15s} {h.hostname}:{h.port} ({h.user}){tags}")
+                if inventory.groups:
+                    print(f"\n   分组: {list(inventory.groups.keys())}")
             return True
 
         print(f"未知命令: {cmd}，输入 /help 查看帮助")
@@ -250,6 +354,8 @@ AI Terminal 命令：
             else:
                 await self.handle_ai_chat(content)
 
+        await self.remote.close()
+
 
 def main() -> None:
     """CLI 入口。"""
@@ -258,6 +364,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AI Terminal 智能终端管家")
     parser.add_argument("-c", "--config", help="配置文件路径")
     parser.add_argument("-t", "--timeout", type=int, help="命令超时时间（秒）")
+    parser.add_argument("command", nargs="?", help="直接执行命令后退出")
     args = parser.parse_args()
 
     config = Config(args.config) if args.config else Config()
@@ -266,11 +373,15 @@ def main() -> None:
 
     app = AITerminal(config)
 
-    try:
-        asyncio.run(app.run())
-    except KeyboardInterrupt:
-        print("\n👋 再见！")
-        sys.exit(0)
+    if args.command:
+        # 单次执行模式
+        asyncio.run(app.execute_direct(args.command))
+    else:
+        try:
+            asyncio.run(app.run())
+        except KeyboardInterrupt:
+            print("\n👋 再见！")
+            sys.exit(0)
 
 
 if __name__ == "__main__":
