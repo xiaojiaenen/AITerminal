@@ -37,21 +37,21 @@ def _supports_emoji() -> bool:
     return True  # Linux/macOS 通常支持
 
 
-# 根据终端能力选择图标
-_EMOJI_OK = "✅" if _supports_emoji() else "[OK]"
-_EMOJI_FAIL = "❌" if _supports_emoji() else "[FAIL]"
-_EMOJI_WARN = "⚠️" if _supports_emoji() else "[!]"
-_EMOJI_CRIT = "🚨" if _supports_emoji() else "[!!]"
-_EMOJI_INFO = "ℹ️" if _supports_emoji() else "[i]"
-_EMOJI_ROBOT = "🤖" if _supports_emoji() else "[AI]"
-_EMOJI_LIGHT = "💡" if _supports_emoji() else "[*]"
-_EMOJI_SYNC = "🔄" if _supports_emoji() else "[~]"
-_EMOJI_WRENCH = "🔧" if _supports_emoji() else "[#]"
-_EMOJI_CHART = "📊" if _supports_emoji() else "[=]"
-_EMOJI_GLOBE = "🌐" if _supports_emoji() else "[@]"
+# 根据终端能力选择图标（回退值必须不含 []，避免 Rich markup 冲突）
+_EMOJI_OK = "✅" if _supports_emoji() else "(OK)"
+_EMOJI_FAIL = "❌" if _supports_emoji() else "(FAIL)"
+_EMOJI_WARN = "⚠️" if _supports_emoji() else "(!)"
+_EMOJI_CRIT = "🚨" if _supports_emoji() else "(!!)"
+_EMOJI_INFO = "ℹ️" if _supports_emoji() else "(i)"
+_EMOJI_ROBOT = "🤖" if _supports_emoji() else "(AI)"
+_EMOJI_LIGHT = "💡" if _supports_emoji() else "(*)"
+_EMOJI_SYNC = "🔄" if _supports_emoji() else "(~)"
+_EMOJI_WRENCH = "🔧" if _supports_emoji() else "(#)"
+_EMOJI_CHART = "📊" if _supports_emoji() else "(=)"
+_EMOJI_GLOBE = "🌐" if _supports_emoji() else "(@)"
 _EMOJI_BYE = "👋" if _supports_emoji() else "bye"
-_EMOJI_GEAR = "⚙️" if _supports_emoji() else "[cfg]"
-_EMOJI_SHIELD = "🛡️" if _supports_emoji() else "[safe]"
+_EMOJI_GEAR = "⚙️" if _supports_emoji() else "(cfg)"
+_EMOJI_SHIELD = "🛡️" if _supports_emoji() else "(safe)"
 _EMOJI_CLOCK = "⏱" if _supports_emoji() else "t"
 
 
