@@ -167,11 +167,11 @@ class TerminalPrompt:
             用户输入字符串，或 None（Ctrl+C/Ctrl+D）
         """
         mode_styles = {
-            "ai": ("❯ ", "prompt"),
-            "direct": ("$ ", "command"),
-            "hybrid": ("🤖 ", "mode-hybrid"),
+            "ai": ("❯ ", "bold cyan"),
+            "direct": ("$ ", "bold green"),
+            "hybrid": ("> ", "bold yellow"),
         }
-        prompt_text, style_name = mode_styles.get(mode, ("❯ ", "prompt"))
+        prompt_text, style_name = mode_styles.get(mode, ("❯ ", "bold cyan"))
 
         try:
             session = self._get_session()
