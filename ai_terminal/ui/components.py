@@ -395,7 +395,7 @@ def print_history(entries: list[dict]) -> None:
         risk = e.get("risk_level", "?")
 
         # 单行摘要（转义用户数据避免 Rich 标签冲突）
-        line = f"  [{i:>2}] {status} [{color}{action}[/{color}] "
+        line = f"  [{i:>2}] {status} [{color}]{action}[/{color}] "
         line += f"[[dim]{time_str}[/dim]] "
         line += f"[cyan]{escape(cmd)}[/cyan]"
 
