@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from datetime import datetime, timezone as _timezone
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -56,6 +57,18 @@ _EMOJI_CLOCK = "⏱" if _supports_emoji() else "t"
 
 
 console = Console()
+
+
+def _to_local_time(ts: str) -> str:
+    """将时间戳字符串转换为本地时间显示，兼容 UTC 旧数据。"""
+    try:
+        # 尝试解析 ISO 格式（可能带时区）
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(None)  # 转为本地时区
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return ts  # 解析失败返回原值
 
 
 def _get_system_info() -> dict[str, str]:
@@ -394,7 +407,7 @@ def print_history(entries: list[dict]) -> None:
 
         # 命令和输出
         cmd = e.get("command", "")[:80]
-        time_str = e.get("timestamp", "")[11:19]  # HH:MM:SS
+        time_str = _to_local_time(e.get("timestamp", ""))[11:19]  # HH:MM:SS
         risk = e.get("risk_level", "?")
 
         # 单行摘要（转义用户数据避免 Rich 标签冲突）
@@ -416,7 +429,7 @@ def print_history_detail(entry: dict) -> None:
     """打印单条历史记录详情（完整输出）。"""
     console.print()
     console.print(f"[bold]命令:[/bold] [cyan]{escape(entry.get('command', ''))}[/cyan]")
-    console.print(f"[bold]时间:[/bold] {entry.get('timestamp', '')}")
+    console.print(f"[bold]时间:[/bold] {_to_local_time(entry.get('timestamp', ''))}")
     console.print(f"[bold]风险:[/bold] {entry.get('risk_level', '?')}")
     console.print(f"[bold]目标:[/bold] {entry.get('target', 'local')}")
     console.print(f"[bold]退出码:[/bold] {entry.get('exit_code', '-')}")
