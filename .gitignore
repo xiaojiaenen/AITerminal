@@ -1,6 +1,9 @@
 # Python
 __pycache__/
 *.py[oc]
+
+# PyInstaller
+*.spec
 build/
 dist/
 *.egg-info

@@ -1,0 +1,145 @@
+name: 构建多平台可执行文件
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (如 0.1.0)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    name: ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+            python: "3.12"
+          - os: macos-latest
+            arch: x64
+            python: "3.12"
+          - os: macos-latest
+            arch: arm64
+            python: "3.12"
+          - os: windows-latest
+            arch: x64
+            python: "3.12"
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller ai-terminal[dev]
+        shell: bash
+
+      - name: 构建 (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          pyinstaller \
+            --onefile \
+            --console \
+            --name ai-terminal \
+            --collect-all ai_terminal \
+            --collect-submodules wuwei \
+            --hidden-import asyncssh \
+            --hidden-import prompt_toolkit \
+            --hidden-import rich \
+            --hidden-import yaml \
+            --hidden-import pydantic \
+            --hidden-import aiohttp \
+            --exclude-module tkinter \
+            --exclude-module matplotlib \
+            --exclude-module numpy \
+            --exclude-module pandas \
+            --exclude-module PIL \
+            --exclude-module cv2 \
+            --exclude-module torch \
+            --exclude-module tensorflow \
+            --exclude-module onnxruntime \
+            --exclude-module pypdf \
+            --exclude-module pypdfium2 \
+            --exclude-module pdfplumber \
+            --exclude-module openpyxl \
+            --exclude-module pptx \
+            --exclude-module magika \
+            --exclude-module lxml \
+            --exclude-module mammoth \
+            --exclude-module markitdown \
+            --exclude-module speech_recognition \
+            --exclude-module pydub \
+            ai_terminal/__main__.py
+        shell: bash
+
+      - name: 构建 (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller `
+            --onefile `
+            --console `
+            --name ai-terminal `
+            --collect-all ai_terminal `
+            --collect-submodules wuwei `
+            --hidden-import asyncssh `
+            --hidden-import prompt_toolkit `
+            --hidden-import rich `
+            --hidden-import yaml `
+            --hidden-import pydantic `
+            --hidden-import aiohttp `
+            --exclude-module tkinter `
+            --exclude-module matplotlib `
+            --exclude-module numpy `
+            --exclude-module pandas `
+            --exclude-module PIL `
+            --exclude-module cv2 `
+            --exclude-module torch `
+            --exclude-module tensorflow `
+            --exclude-module onnxruntime `
+            --exclude-module pypdf `
+            --exclude-module pypdfium2 `
+            --exclude-module pdfplumber `
+            --exclude-module openpyxl `
+            --exclude-module pptx `
+            --exclude-module magika `
+            --exclude-module lxml `
+            --exclude-module mammoth `
+            --exclude-module markitdown `
+            --exclude-module speech_recognition `
+            --exclude-module pydub `
+            ai_terminal/__main__.py
+        shell: pwsh
+
+      - name: 生成校验文件
+        run: |
+          mkdir -p dist
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            certutil -hashfile ai-terminal.exe sha256 > ai-terminal.exe.sha256
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            sha256sum ai-terminal > ai-terminal.sha256
+          else
+            shasum -a 256 ai-terminal > ai-terminal.sha256
+          fi
+        shell: bash
+        env:
+          RUNNER_OS: ${{ runner.os }}
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-terminal-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/ai-terminal*
