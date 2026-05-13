@@ -24,10 +24,10 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check ai_terminal/ tests/ 2>&1 || true
+        run: ruff check ai_terminal/ tests/
 
       - name: Test
-        run: pytest -v --tb=short 2>&1 || true
+        run: pytest -v --tb=short
 
   build:
     needs: test

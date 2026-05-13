@@ -1,8 +1,10 @@
 """安全策略引擎测试（跨平台）。"""
 
 import sys
+
 import pytest
-from ai_terminal.safety.policy import SafetyPolicy, RiskLevel, Decision
+
+from ai_terminal.safety.policy import RiskLevel, SafetyPolicy
 
 
 def _is_windows() -> bool:

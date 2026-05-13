@@ -2,7 +2,7 @@
 
 __version__ = "0.2.0"
 
-from ai_terminal.app import AITerminal
-from ai_terminal.config import Config, HostConfig, ClusterInventory
+from ai_terminal.app import AITerminalTUI
+from ai_terminal.config import ClusterInventory, Config, HostConfig
 
-__all__ = ["AITerminal", "Config", "HostConfig", "ClusterInventory"]
+__all__ = ["AITerminalTUI", "Config", "HostConfig", "ClusterInventory"]

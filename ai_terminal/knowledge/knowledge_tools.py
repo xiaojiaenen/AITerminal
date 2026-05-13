@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
+from wuwei.memory.embedder import Embedder, SimpleEmbedder
 from wuwei.memory.knowledge_store import InMemoryKnowledgeStore, KnowledgeChunk
-from wuwei.memory.embedder import SimpleEmbedder, Embedder
 
 
 class OpsKnowledgeBase:
@@ -16,18 +17,26 @@ class OpsKnowledgeBase:
         store_path: str | None = None,
         embedder: Embedder | None = None,
     ):
-        from pathlib import Path
-
         self.embedder = embedder or SimpleEmbedder()
         self.store = InMemoryKnowledgeStore(embedder=self.embedder)
 
         if store_path:
-            self._store_path = Path(store_path).expanduser()
+            self._store_path = self._resolve_store_path(Path(store_path).expanduser())
         else:
-            self._store_path = Path("~/.ai-terminal/knowledge/knowledge.jsonl").expanduser()
+            self._store_path = self._resolve_store_path(
+                Path("~/.ai-terminal/knowledge/knowledge.jsonl").expanduser()
+            )
 
         self._store_path.parent.mkdir(parents=True, exist_ok=True)
         self._load()
+
+    def _resolve_store_path(self, path: Path) -> Path:
+        """Allow config values to point at either a directory or a JSONL file."""
+        if path.exists() and path.is_dir():
+            return path / "knowledge.jsonl"
+        if path.suffix.lower() == ".jsonl":
+            return path
+        return path / "knowledge.jsonl"
 
     async def ingest(
         self,
@@ -79,13 +88,12 @@ class OpsKnowledgeBase:
         """获取知识库统计。"""
         return {
             "total_chunks": len(self.store._chunks.values()),
-            "sources": list(set(c.source for c in self.store._chunks.values() if c.source)),
+            "sources": list({c.source for c in self.store._chunks.values() if c.source}),
         }
 
     def _load(self) -> None:
         """从 JSONL 文件加载知识。"""
         import json
-        import asyncio
 
         if not self._store_path.exists():
             return

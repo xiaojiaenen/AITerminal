@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -151,7 +151,7 @@ class AuditLogger:
         risk_counts: Counter[str] = Counter()
         total = 0
 
-        for i in range(days):
+        for _i in range(days):
             day = datetime.now().strftime("%Y-%m-%d")  # 简化：只看今天
             log_file = self.log_dir / f"audit-{day}.jsonl"
             if not log_file.exists():

@@ -11,7 +11,7 @@
 - **安全策略** — 命令四级分类 + 确认流程 + 审计日志
 - **踩坑自动沉淀** — 失败命令自动诊断根因，生成可复用 Skill
 - **运维知识库（RAG）** — 导入文档，语义搜索
-- **高级交互** — Rich 美化输出、prompt_toolkit 自动补全
+- **全屏 TUI** — Textual 工作台、风险确认弹窗、表格化历史/主机/技能视图
 
 ## 安装
 
@@ -28,33 +28,33 @@ uv pip install -e .
 ## 使用
 
 ```bash
-# 交互模式
+# 启动全屏 TUI
 ai-terminal
 
-# 单次执行
-ai-terminal "docker ps"
+# 指定配置文件
+ai-terminal -c ~/.ai-terminal/config.yaml
 ```
 
-## 输入模式
+## TUI 输入模式
 
 | 前缀 | 模式 | 示例 |
 |------|------|------|
 | 无 | AI 对话 | "看看磁盘使用率" |
 | `!` | 直接执行 | `!docker ps` |
 | `>` | 混合模式 | "> 清理日志" |
-| `/` | 快捷命令 | `/status` |
+| `/` | 页面/快捷命令 | `/history` |
 
 ## 快捷命令
 
 | 命令 | 说明 |
 |------|------|
 | `/help` | 显示帮助 |
-| `/status` | 系统状态 |
-| `/history` | 执行历史 |
-| `/stats` | 审计统计 |
-| `/config` | 当前配置 |
-| `/incidents` | 踩坑记录 |
+| `/chat` | 对话工作区 |
 | `/hosts` | 主机清单 |
+| `/history` | 执行历史 |
+| `/skills` | 技能库 |
+| `/incidents` | 经验记录 |
+| `/config` | 当前配置 |
 | `/quit` | 退出 |
 
 ## 安全策略
@@ -136,7 +136,7 @@ groups:
 ```
 ai_terminal/
 ├── __init__.py
-├── app.py              # CLI 主应用
+├── app.py              # TUI 入口
 ├── agent.py            # LLM Agent 集成
 ├── config.py           # 配置管理
 ├── safety/
@@ -151,9 +151,14 @@ ai_terminal/
 │   └── incident.py     # 踩坑自动沉淀
 ├── knowledge/
 │   └── knowledge_tools.py  # 运维知识库 RAG
-└── ui/
-    ├── components.py   # Rich UI 组件
-    └── prompt.py       # prompt_toolkit 交互
+├── services/
+│   └── terminal_service.py # TUI 业务服务层
+└── tui/
+    ├── app.py          # Textual 全屏应用
+    ├── commands.py     # 斜杠命令路由
+    ├── formatters.py   # 表格/日志展示辅助
+    ├── widgets/        # 输入栏、风险弹窗等组件
+    └── theme.tcss      # TUI 样式
 ```
 
 ## 开发

@@ -1,5 +1,7 @@
 # AI Terminal 开发手册
 
+> 当前主线代码以 `Textual` TUI 为准。本文中出现的旧 `ui/`、`prompt_toolkit` 结构属于历史设计，阅读时请优先对照 `ai_terminal/tui/`、`ai_terminal/services/` 与 `ai_terminal/app.py`。
+
 ## 目录
 
 - [1. 项目架构](#1-项目架构)
@@ -20,31 +22,40 @@
 ```
 ai_terminal/
 ├── __init__.py
-├── __main__.py          # python -m ai_terminal 入口
-├── app.py               # 主应用 CLI（交互循环、输入路由）
-├── agent.py             # LLM Agent 集成（封装 wuwei Agent）
-├── config.py            # 配置管理（YAML + 环境变量覆盖）
+├── __main__.py              # python -m ai_terminal 入口
+├── app.py                   # Textual TUI 入口转发
+├── agent.py                 # LLM Agent 集成（封装 wuwei Agent）
+├── config.py                # 配置管理（YAML + 环境变量覆盖）
 ├── cluster/
 │   ├── __init__.py
-│   └── remote.py        # SSH 远程执行器（基于 asyncssh）
+│   └── remote.py            # SSH 远程执行器（基于 asyncssh）
 ├── knowledge/
 │   ├── __init__.py
-│   └── knowledge_tools.py  # 运维知识库（RAG）
+│   └── knowledge_tools.py   # 运维知识库（JSONL + RAG 工具）
 ├── runtime/
 │   ├── __init__.py
-│   ├── incident.py      # 踩坑记录、自动诊断、Skill 生成
-│   └── safety_hook.py   # wuwei RuntimeHook — 执行前安全检查
+│   ├── incident.py          # 踩坑记录、自动诊断、Skill 生成
+│   └── safety_hook.py       # wuwei RuntimeHook — 工具执行前安全拦截
 ├── safety/
 │   ├── __init__.py
-│   ├── audit.py         # 审计日志（JSONL 按天轮转）
-│   └── policy.py        # 安全策略（4 级正则分类）
+│   ├── audit.py             # 审计日志（JSONL 按天轮转）
+│   └── policy.py            # 安全策略（4 级正则分类）
+├── services/
+│   ├── __init__.py
+│   └── terminal_service.py  # TUI 服务层
+├── skill/
+│   ├── __init__.py
+│   └── skill_runner.py      # Skill 聚合与检索
 ├── tools/
 │   ├── __init__.py
-│   └── shell_tools.py   # 本地命令执行器（跨平台 PowerShell/bash）
-└── ui/
+│   └── shell_tools.py       # 本地命令执行器（跨平台 PowerShell/bash）
+└── tui/
     ├── __init__.py
-    ├── components.py    # Rich 终端 UI（Banner、表格、面板）
-    └── prompt.py        # prompt_toolkit 交互输入（自动补全、历史）
+    ├── app.py               # Textual 全屏工作台
+    ├── commands.py          # Slash 命令路由
+    ├── controllers/         # Chat / Command 工作流控制器
+    ├── widgets/             # 输入框、风险确认弹窗等
+    └── formatters.py        # 表格与时间线展示辅助
 ```
 
 ### 依赖关系
@@ -228,10 +239,13 @@ _SAFE_WINDOWS: list[re.Pattern] = [
 - 分块大小 500 字符，重叠 50 字符
 - 注册为 3 个 LLM 工具：`ingest_knowledge`, `search_knowledge`, `knowledge_stats`
 
-### 3.9 ui/ — 终端界面
+### 3.9 tui/ — Textual 终端界面
 
-- `components.py`：Rich 美化输出（Banner、表格、面板、语法高亮）
-- `prompt.py`：prompt_toolkit 交互输入（自动补全、命令历史、平台感知语法高亮）
+- `app.py`：全屏工作台，管理标签页、输入路由、命令面板和快捷键
+- `controllers/`：拆分 AI 对话流和命令执行流
+- `widgets/command_input.py`：底部输入栏，负责历史与补全
+- `widgets/risk_modal.py`：高风险命令确认弹窗
+- `formatters.py`：表格、事件时间线和空状态格式化
 
 ---
 
@@ -562,7 +576,7 @@ knowledge_tools.py:30-88   OpsKnowledgeBase
 knowledge_tools.py:90-170  register_knowledge_tools()
 ```
 
-- 存储：纯内存（`store_path` 参数未被使用）
+- 存储：JSONL 持久化到 `knowledge.store_path`（目录会自动落到 `knowledge.jsonl`）
 - 嵌入：`SimpleEmbedder`（bigram hash，256 维）
 - 分块：500 字符/块，50 字符重叠
 

@@ -1,6 +1,5 @@
 """踩坑记录器测试。"""
 
-import pytest
 import tempfile
 from pathlib import Path
 

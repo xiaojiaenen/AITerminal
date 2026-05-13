@@ -13,8 +13,8 @@ requires-python = ">=3.10"
 dependencies = [
     "wuwei>=1.0.1",
     "asyncssh>=2.14",
-    "prompt_toolkit>=3.0",
     "rich>=13.0",
+    "textual>=0.80",
     "pyyaml>=6.0",
     "pydantic>=2.0",
 ]
@@ -41,6 +41,8 @@ target-version = ['py310']
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
 
 [tool.pytest.ini_options]

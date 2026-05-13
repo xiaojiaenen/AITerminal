@@ -9,7 +9,6 @@ from typing import Any
 
 import yaml
 
-
 # 默认配置
 _DEFAULT_CONFIG: dict[str, Any] = {
     "general": {
@@ -48,6 +47,10 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "enabled": True,
         "store_path": "~/.ai-terminal/knowledge",
     },
+    "skills": {
+        "dirs": ["~/.ai-terminal/skills", "skills"],
+        "incident_dir": "~/.ai-terminal/incidents/skills",
+    },
 }
 
 
@@ -64,7 +67,7 @@ class HostConfig:
     env: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "HostConfig":
+    def from_dict(cls, d: dict[str, Any]) -> HostConfig:
         return cls(
             name=d.get("name", d.get("hostname", "")),
             hostname=d["hostname"],
@@ -84,7 +87,7 @@ class ClusterInventory:
     groups: dict[str, list[str]] = field(default_factory=dict)  # group_name -> [host_names]
 
     @classmethod
-    def load(cls, path: str | Path) -> "ClusterInventory":
+    def load(cls, path: str | Path) -> ClusterInventory:
         """从 YAML 文件加载主机清单。"""
         p = Path(path).expanduser()
         if not p.exists():

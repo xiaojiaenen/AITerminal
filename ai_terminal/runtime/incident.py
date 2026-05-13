@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
@@ -206,19 +206,6 @@ class IncidentRecorder:
                 solution = self._fill_solution(solution, command, error_output)
                 break
 
-        # 过滤：没有匹配已知模式且错误信息不包含实质性内容
-        if not root_cause:
-            # 只保留有关键异常字样的错误
-            has_substance = any(
-                kw in stripped_error.lower()
-                for kw in (
-                    "error", "fail", "exception", "denied",
-                    "not found", "cannot", "无法", "错误",
-                )
-            )
-            if not has_substance:
-                return None
-
         incident = Incident(
             id=self._generate_id(),
             timestamp=datetime.now().isoformat(),
@@ -314,12 +301,30 @@ class IncidentRecorder:
     def generate_skill(self, incident: Incident) -> str:
         """从经验记录生成 Skill 文档。"""
         skill_dir = self.store_path / "skills"
-        skill_dir.mkdir(exist_ok=True)
+        raw_name = (incident.root_cause or incident.command or f"incident-{incident.id}")[:40]
+        skill_name = re.sub(r"[^a-zA-Z0-9_-]+", "-", raw_name).strip("-")
+        skill_name = skill_name or f"incident-{incident.id}"
+        skill_root = skill_dir / skill_name
+        skill_root.mkdir(parents=True, exist_ok=True)
 
-        filename = f"{incident.id}_{incident.root_cause[:30].replace(' ', '_')}.md"
-        skill_file = skill_dir / filename
+        skill_file = skill_root / "SKILL.md"
+        tags = incident.tags or ["ops", "incident"]
+        content = f"""---
+name: {skill_name}
+description: {incident.root_cause or incident.command[:80]}
+when_to_use:
+  - 同类故障复盘
+  - 基于已有失败经验做排障
+user_invocable: true
+---
 
-        content = incident.to_markdown()
+{incident.to_markdown()}
+
+## Skill Notes
+
+- Source incident: {incident.id}
+- Tags: {", ".join(tags)}
+"""
         skill_file.write_text(content, encoding="utf-8")
 
         incident.skill_generated = True

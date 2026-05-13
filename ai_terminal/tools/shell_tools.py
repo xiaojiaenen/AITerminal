@@ -24,12 +24,14 @@ def _get_shell_command(command: str) -> tuple[str, bool]:
         # Windows: 检测 pwsh (PowerShell 7+) 是否可用，否则用 powershell
         # 强制 UTF-8 输出避免中文乱码
         import shutil
-        if shutil.which("pwsh"):
-            return f'pwsh -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; {command}"', False
-        else:
-            return f'powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; {command}"', False
-    else:
-        return command, True
+
+        shell = "pwsh" if shutil.which("pwsh") else "powershell"
+        shell_cmd = (
+            f'{shell} -NoProfile -Command '
+            f'"[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; {command}"'
+        )
+        return shell_cmd, False
+    return command, True
 
 
 @dataclass
@@ -175,6 +177,7 @@ def register_shell_tools(registry: Any, shell_executor: ShellExecutor | None = N
     @registry.tool(
         name="run_command",
         description="在本地终端执行命令。返回 stdout、stderr 和退出码。支持 Windows/Linux/macOS。",
+        side_effect=True,
     )
     async def run_command(
         command: str,
@@ -187,6 +190,7 @@ def register_shell_tools(registry: Any, shell_executor: ShellExecutor | None = N
     @registry.tool(
         name="run_pipeline",
         description="执行管道命令（多个命令用 | 连接）。",
+        side_effect=True,
     )
     async def run_pipeline(
         commands: list[str],
@@ -198,6 +202,7 @@ def register_shell_tools(registry: Any, shell_executor: ShellExecutor | None = N
     @registry.tool(
         name="run_batch",
         description="批量执行多条命令。parallel=true 时并行执行。",
+        side_effect=True,
     )
     async def run_batch(
         commands: list[str],

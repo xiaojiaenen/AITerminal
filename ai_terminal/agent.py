@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+import os
+import re
+import sys as _sys
 
 from wuwei.agent.agent import Agent
 from wuwei.llm.gateway import LLMGateway
+from wuwei.llm.types import Message as LLMMessage
 from wuwei.tools.registry import ToolRegistry
 
-from ai_terminal.config import Config
-from ai_terminal.safety.policy import SafetyPolicy, RiskLevel
-from ai_terminal.safety.audit import AuditLogger, AuditAction
-from ai_terminal.tools.shell_tools import ShellExecutor, register_shell_tools
 from ai_terminal.cluster.remote import RemoteExecutor, register_cluster_tools
+from ai_terminal.config import Config
+from ai_terminal.knowledge import OpsKnowledgeBase, register_knowledge_tools
+from ai_terminal.runtime import IncidentRecorder, SafetyApprovalHook, register_incident_tools
+from ai_terminal.safety.audit import AuditAction, AuditLogger
+from ai_terminal.safety.policy import RiskLevel, SafetyPolicy
 from ai_terminal.skill import SkillRunner, register_skill_tools
-
-
-import sys as _sys
+from ai_terminal.tools.shell_tools import ShellExecutor, register_shell_tools
 
 if _sys.platform == "win32":
     SYSTEM_PROMPT = """你是 AI Terminal 智能终端管家。你的职责：
@@ -63,11 +65,14 @@ class AITerminalAgent:
         policy: SafetyPolicy | None = None,
         audit: AuditLogger | None = None,
         skill_runner: SkillRunner | None = None,
+        incidents: IncidentRecorder | None = None,
     ):
         self.config = config
         self.policy = policy or SafetyPolicy(config.safety)
         self.audit = audit or AuditLogger(config.get("audit.log_dir", "~/.ai-terminal/audit"))
         self.skill_runner = skill_runner or SkillRunner()
+        self.incidents = incidents or IncidentRecorder()
+        self.knowledge = OpsKnowledgeBase(self.config.get("knowledge.store_path"))
 
         # 执行器
         self.shell = ShellExecutor(
@@ -82,6 +87,8 @@ class AITerminalAgent:
         register_shell_tools(self.registry, self.shell)
         self._inventory = config.load_inventory()
         register_cluster_tools(self.registry, self.remote, self._inventory)
+        register_knowledge_tools(self.registry, self.knowledge)
+        register_incident_tools(self.registry, self.incidents)
 
         # 注册安全检查工具
         self._register_safety_tools()
@@ -123,7 +130,7 @@ class AITerminalAgent:
         llm_config = self.config.llm
 
         # api_key: 优先用配置文件，其次用环境变量
-        api_key = llm_config.get("api_key") or __import__("os").environ.get("OPENAI_API_KEY", "")
+        api_key = llm_config.get("api_key") or os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             raise ValueError(
                 "未配置 LLM API Key。请在 config.yaml 中设置 llm.api_key，"
@@ -148,6 +155,7 @@ class AITerminalAgent:
             tools=self.registry,
             default_system_prompt=SYSTEM_PROMPT,
             default_max_steps=30,
+            hooks=[SafetyApprovalHook(self.policy, self.audit)],
         )
         return self._agent
 
@@ -201,8 +209,9 @@ class AITerminalAgent:
     async def generate_command(self, description: str) -> str:
         """让 AI 生成命令但不执行（用于混合模式）。"""
         from wuwei.agent.agent import Agent as WuAgent
+
         llm_config = self.config.llm
-        api_key = llm_config.get("api_key") or __import__("os").environ.get("OPENAI_API_KEY", "")
+        api_key = llm_config.get("api_key") or os.environ.get("OPENAI_API_KEY", "")
         gw_config = {
             "provider": llm_config.get("provider", "openai"),
             "api_key": api_key,
@@ -216,9 +225,17 @@ class AITerminalAgent:
         llm = LLMGateway(gw_config)
 
         if _sys.platform == "win32":
-            cmd_prompt = "你是一个终端命令专家。当前系统是 Windows。用户会描述需求，你只输出要执行的 Windows/PowerShell 命令，每行一条，不要解释，不要 markdown 代码块。"
+            cmd_prompt = (
+                "你是一个终端命令专家。当前系统是 Windows。"
+                "用户会描述需求，你只输出要执行的 Windows/PowerShell 命令，"
+                "每行一条，不要解释，不要 markdown 代码块。"
+            )
         else:
-            cmd_prompt = "你是一个终端命令专家。当前系统是 Linux/macOS。用户会描述需求，你只输出要执行的 shell 命令，每行一条，不要解释，不要 markdown 代码块。"
+            cmd_prompt = (
+                "你是一个终端命令专家。当前系统是 Linux/macOS。"
+                "用户会描述需求，你只输出要执行的 shell 命令，"
+                "每行一条，不要解释，不要 markdown 代码块。"
+            )
 
         agent = WuAgent(
             llm=llm,
@@ -329,46 +346,32 @@ class AITerminalAgent:
         if not conversation_text:
             return []
 
-        review_prompt = f"""你是一个运维经验审查专家。请审查以下 AI Terminal 终端对话记录，判断是否有值得沉淀的运维经验。
-
-有价值的经验包括：
-1. 解决了一个具体的运维问题（错误排查、配置修复等）
-2. 发现了一个重要的操作技巧或最佳实践
-3. 踩到了某个坑并找到了解决方案
-
-不值得沉淀的内容：
-1. 简单的查看/查询操作
-2. 一般的聊天对话
-3. 没有实际结论的探索
-
-对话记录：
----
-{chr(10).join(conversation_text[-30:])}
----
-
-请用 JSON 格式回复，如果没有值得沉淀的经验请返回空数组：
-```json
-[
-  {{
-    "title": "经验的简短标题",
-    "problem": "遇到的问题",
-    "root_cause": "根因分析",
-    "solution": "解决方案（可执行的命令）",
-    "tags": ["标签1", "标签2"]
-  }}
-]
-```
-
-如果没有任何值得沉淀的经验，返回：```json
-[]
-```"""
+        review_prompt = (
+            "你是一个运维经验审查专家。请审查以下 AI Terminal 终端对话记录，"
+            "判断是否有值得沉淀的运维经验。\n\n"
+            "有价值的经验包括：\n"
+            "1. 解决了一个具体的运维问题（错误排查、配置修复等）\n"
+            "2. 发现了一个重要的操作技巧或最佳实践\n"
+            "3. 踩到了某个坑并找到了解决方案\n\n"
+            "不值得沉淀的内容：\n"
+            "1. 简单的查看/查询操作\n"
+            "2. 一般的聊天对话\n"
+            "3. 没有实际结论的探索\n\n"
+            f"对话记录：\n---\n{chr(10).join(conversation_text[-30:])}\n---\n\n"
+            "请用 JSON 格式回复，如果没有值得沉淀的经验请返回空数组：\n"
+            "```json\n[\n"
+            '  {\n    "title": "经验的简短标题",\n'
+            '    "problem": "遇到的问题",\n'
+            '    "root_cause": "根因分析",\n'
+            '    "solution": "解决方案（可执行的命令）",\n'
+            '    "tags": ["标签1", "标签2"]\n  }\n]\n```\n\n'
+            "如果没有任何值得沉淀的经验，返回：```json\n[]\n```"
+        )
 
         try:
-            from wuwei.llm.types import Message as LLMMessage
-
             llm = self._llm or LLMGateway({
                 "provider": self.config.llm.get("provider", "openai"),
-                "api_key": self.config.llm.get("api_key") or __import__("os").environ.get("OPENAI_API_KEY", ""),
+                "api_key": self.config.llm.get("api_key") or os.environ.get("OPENAI_API_KEY", ""),
                 "model": self.config.llm.get("model", "gpt-4o"),
                 "temperature": 0.1,
                 "max_tokens": 2048,
@@ -396,26 +399,23 @@ class AITerminalAgent:
 
     def _parse_experience_json(self, content: str) -> list[dict]:
         """从 LLM 回复中解析经验 JSON。"""
-        import json as _json
-        import re as _re
-
         # 尝试匹配 ```json ... ``` 代码块
-        match = _re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
         if match:
             json_str = match.group(1).strip()
         else:
             # 尝试匹配直接的 JSON 数组
-            match = _re.search(r"\[[\s\S]*\]", content)
+            match = re.search(r"\[[\s\S]*\]", content)
             if match:
                 json_str = match.group(0)
             else:
                 return []
 
         try:
-            data = _json.loads(json_str)
+            data = json.loads(json_str)
             if isinstance(data, list):
                 return data
-        except (_json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError):
             pass
 
         return []

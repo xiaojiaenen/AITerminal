@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 try:
@@ -166,7 +166,7 @@ class RemoteExecutor:
                 pass
         self._connections.clear()
 
-    async def __aenter__(self) -> "RemoteExecutor":
+    async def __aenter__(self) -> RemoteExecutor:
         return self
 
     async def __aexit__(self, *args: Any) -> None:
@@ -184,6 +184,7 @@ def register_cluster_tools(
     @registry.tool(
         name="remote_run",
         description="在远程主机上执行命令。target 可以是主机名、组名或 'all'。",
+        side_effect=True,
     )
     async def remote_run(
         command: str,
@@ -209,6 +210,7 @@ def register_cluster_tools(
     @registry.tool(
         name="remote_upload",
         description="上传文件到远程主机。",
+        side_effect=True,
     )
     async def remote_upload(
         local_path: str,

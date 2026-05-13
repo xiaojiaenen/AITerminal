@@ -2,6 +2,19 @@
 
 本文档列出所有 Agent 可用的工具，包括参数、安全等级和使用场景。
 
+## 当前状态说明
+
+当前代码实际注册的工具以 `ai_terminal/agent.py` 为准，已接入的运行时工具包括：
+
+- `run_command` / `run_pipeline` / `run_batch`
+- `remote_run` / `remote_upload` / `list_hosts`
+- `check_safety`
+- `ingest_knowledge` / `search_knowledge` / `knowledge_stats`
+- `record_incident` / `search_incidents` / `get_incident_stats`
+- `list_skills` / `search_skills` / `get_skill`
+
+下文中未出现在上述列表里的工具，属于设计稿或规划项，不代表当前版本已经实现或注册。
+
 ## 1. 本地 Shell 工具
 
 ### run_command

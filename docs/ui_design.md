@@ -2,6 +2,8 @@
 
 参考 Claude Code / Warp AI / Cursor 的终端交互体验，打造高级感的命令行界面。
 
+> 注意：本文主要保留早期交互设计草案。当前代码已经切换到 `Textual` 全屏 TUI，实际实现以 `ai_terminal/tui/` 和 `ai_terminal/services/` 为准，不再使用 `prompt_toolkit` 作为主界面框架。
+
 ## 技术栈
 
 ```

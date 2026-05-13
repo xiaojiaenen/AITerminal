@@ -38,6 +38,7 @@ def _is_windows() -> bool:
 # Linux/macOS SAFE 命令
 _SAFE_UNIX: list[re.Pattern] = [
     re.compile(r"^ls\b"),
+    re.compile(r"^pwd\b"),
     re.compile(r"^cat\b"),
     re.compile(r"^head\b"),
     re.compile(r"^tail\b"),
@@ -100,7 +101,10 @@ _SAFE_UNIX: list[re.Pattern] = [
 # Windows SAFE 命令
 _SAFE_WINDOWS: list[re.Pattern] = [
     re.compile(r"^dir\b", re.IGNORECASE),
+    re.compile(r"^ls\b", re.IGNORECASE),
+    re.compile(r"^pwd\b", re.IGNORECASE),
     re.compile(r"^type\b", re.IGNORECASE),
+    re.compile(r"^cat\b", re.IGNORECASE),
     re.compile(r"^echo\b", re.IGNORECASE),
     re.compile(r"^whoami\b", re.IGNORECASE),
     re.compile(r"^hostname\b", re.IGNORECASE),
