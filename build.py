@@ -4,6 +4,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows CI 强制 UTF-8 输出，避免中文/emoji 乱码
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 PROJECT_DIR = Path(__file__).parent
 ENTRY = PROJECT_DIR / "ai_terminal" / "__main__.py"
 DIST_DIR = PROJECT_DIR / "dist"
