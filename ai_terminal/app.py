@@ -23,6 +23,7 @@ from ai_terminal.ui.components import (
     print_incident_stats,
     print_hosts,
     print_history,
+    print_history_detail,
     print_config,
     _EMOJI_OK,
     _EMOJI_FAIL,
@@ -117,6 +118,8 @@ class AITerminal:
             command=command,
             risk_level=decision.risk_level,
             exit_code=result.exit_code,
+            output=result.stdout,
+            stderr=result.stderr,
             duration_ms=result.duration_ms,
         )
 
@@ -209,6 +212,8 @@ class AITerminal:
                 command=command,
                 risk_level=RiskLevel.SAFE,
                 exit_code=r.exit_code,
+                output=r.stdout,
+                stderr=r.stderr,
                 duration_ms=r.duration_ms,
                 target=r.host,
             )
@@ -236,6 +241,17 @@ class AITerminal:
         if cmd == "/history":
             entries = self.audit.get_recent(20)
             print_history(entries)
+            return True
+
+        if cmd.startswith("/history "):
+            parts = cmd.split()
+            if len(parts) == 2 and parts[1].isdigit():
+                idx = int(parts[1])
+                entries = self.audit.get_recent(20)
+                if 1 <= idx <= len(entries):
+                    print_history_detail(entries[-idx])
+                else:
+                    console.print(f"[red]无效编号: {idx}，当前最多 20 条[/red]")
             return True
 
         if cmd == "/stats":

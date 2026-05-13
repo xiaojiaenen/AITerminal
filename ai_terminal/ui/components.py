@@ -350,23 +350,22 @@ def print_hosts(hosts: list[dict], groups: dict[str, list[str]]) -> None:
             console.print(f"  [cyan]{group}[/cyan]: {', '.join(members)}")
 
 
+def _truncate(text: str, max_chars: int) -> str:
+    """截断文本，末尾加省略号。"""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "..."
+
+
 def print_history(entries: list[dict]) -> None:
-    """打印执行历史。"""
+    """打印执行历史（含命令输出预览）。"""
     if not entries:
         console.print("[dim]暂无执行历史。[/dim]")
         return
 
-    table = Table(
-        title=f"最近 {len(entries)} 条记录",
-        box=box.ROUNDED,
-        show_header=True,
-        header_style="bold cyan",
-    )
-    table.add_column("时间", style="dim")
-    table.add_column("操作", justify="center")
-    table.add_column("风险", justify="center")
-    table.add_column("目标", justify="center")
-    table.add_column("命令", max_width=40)
+    console.print(f"\n[bold]最近 {len(entries)} 条记录[/bold]")
+    console.print("[dim]输入 /history <编号> 查看完整输出[/dim]\n")
 
     action_colors = {
         "executed": "green",
@@ -375,18 +374,68 @@ def print_history(entries: list[dict]) -> None:
         "blocked": "red bold",
     }
 
-    for e in entries:
+    for i, e in enumerate(reversed(entries), 1):
         action = e.get("action", "?")
         color = action_colors.get(action, "white")
-        table.add_row(
-            e.get("timestamp", "")[:19],
-            f"[{color}]{action}[/{color}]",
-            e.get("risk_level", "?"),
-            e.get("target", "local"),
-            e.get("command", "")[:50],
-        )
+        exit_code = e.get("exit_code")
+        output = e.get("output", "")
 
-    console.print(table)
+        # 状态标记
+        if exit_code == 0:
+            status = f"[green]{_EMOJI_OK}[/green]"
+        elif exit_code is not None:
+            status = f"[red]{_EMOJI_FAIL} exit={exit_code}[/red]"
+        else:
+            status = f"[dim]·[/dim]"
+
+        # 命令和输出
+        cmd = e.get("command", "")[:80]
+        time_str = e.get("timestamp", "")[11:19]  # HH:MM:SS
+        risk = e.get("risk_level", "?")
+
+        # 单行摘要
+        line = f"  [{i:>2}] {status} [{color}{action}[/{color}] "
+        line += f"[[dim]{time_str}[/dim]] "
+        line += f"[cyan]{cmd}[/cyan]"
+
+        # 如果有输出，追加截断预览
+        if output:
+            preview = _truncate(output, 100).replace("\n", " ")
+            line += f"\n      输出: [dim]{preview}[/dim]"
+
+        console.print(line)
+
+    console.print()
+
+
+def print_history_detail(entry: dict) -> None:
+    """打印单条历史记录详情（完整输出）。"""
+    console.print()
+    console.print(f"[bold]命令:[/bold] [cyan]{entry.get('command', '')}[/cyan]")
+    console.print(f"[bold]时间:[/bold] {entry.get('timestamp', '')}")
+    console.print(f"[bold]风险:[/bold] {entry.get('risk_level', '?')}")
+    console.print(f"[bold]目标:[/bold] {entry.get('target', 'local')}")
+    console.print(f"[bold]退出码:[/bold] {entry.get('exit_code', '-')}")
+    console.print(f"[bold]耗时:[/bold] {entry.get('duration_ms', '-')}ms")
+
+    output = entry.get("output", "")
+    if output:
+        if len(output) > 2000:
+            console.print(f"\n[bold]输出[/bold] [dim](截断，完整内容见审计日志文件)[/dim]:")
+            console.print(Syntax(output[:2000], "bash", theme="monokai"))
+            console.print(f"[dim]... 已截断 {len(output) - 2000} 字符[/dim]")
+        else:
+            console.print(f"\n[bold]输出:[/bold]")
+            console.print(Syntax(output, "bash", theme="monokai"))
+    else:
+        console.print("\n[dim]无输出[/dim]")
+
+    stderr = entry.get("stderr", "")
+    if stderr:
+        console.print(f"\n[bold red]错误输出:[/bold red]")
+        console.print(f"[red]{stderr[:2000]}[/red]")
+
+    console.print()
 
 
 def print_config(config_data: dict) -> None:

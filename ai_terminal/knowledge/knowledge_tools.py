@@ -9,16 +9,25 @@ from wuwei.memory.embedder import SimpleEmbedder, Embedder
 
 
 class OpsKnowledgeBase:
-    """运维知识库。"""
+    """运维知识库（支持 JSONL 持久化）。"""
 
     def __init__(
         self,
         store_path: str | None = None,
         embedder: Embedder | None = None,
     ):
+        from pathlib import Path
+
         self.embedder = embedder or SimpleEmbedder()
         self.store = InMemoryKnowledgeStore(embedder=self.embedder)
-        self._store_path = store_path
+
+        if store_path:
+            self._store_path = Path(store_path).expanduser()
+        else:
+            self._store_path = Path("~/.ai-terminal/knowledge/knowledge.jsonl").expanduser()
+
+        self._store_path.parent.mkdir(parents=True, exist_ok=True)
+        self._load()
 
     async def ingest(
         self,
@@ -29,81 +38,27 @@ class OpsKnowledgeBase:
         chunk_overlap: int = 50,
     ) -> int:
         """导入文档到知识库。返回分块数量。"""
-        chunks = self._split_text(text, chunk_size, chunk_overlap)
-        knowledge_chunks = []
-        for i, chunk_text in enumerate(chunks):
-            kc = KnowledgeChunk(
-                id=f"{source}_{i}" if source else f"chunk_{i}",
-                content=chunk_text,
-                source=source,
-                metadata={"tags": tags or [], "chunk_index": i},
-            )
-            knowledge_chunks.append(kc)
-
-        await self.store.add_batch(knowledge_chunks)
-        return len(knowledge_chunks)
-
-    def _split_text(
-        self, text: str, chunk_size: int = 500, overlap: int = 50
-    ) -> list[str]:
-        """智能分块：按段落优先，其次按句子。"""
-        # 先按段落分
-        paragraphs = text.split("\n\n")
-        chunks: list[str] = []
-        current = ""
-
-        for para in paragraphs:
-            para = para.strip()
-            if not para:
-                continue
-
-            if len(current) + len(para) + 2 <= chunk_size:
-                current = current + "\n\n" + para if current else para
-            else:
-                if current:
-                    chunks.append(current)
-                # 段落本身太长则按句子分
-                if len(para) > chunk_size:
-                    sentences = para.replace("。", "。\n").replace(". ", ".\n").split("\n")
-                    sub_current = ""
-                    for sent in sentences:
-                        sent = sent.strip()
-                        if not sent:
-                            continue
-                        if len(sub_current) + len(sent) + 1 <= chunk_size:
-                            sub_current = sub_current + " " + sent if sub_current else sent
-                        else:
-                            if sub_current:
-                                chunks.append(sub_current)
-                            sub_current = sent
-                    if sub_current:
-                        current = sub_current
-                    else:
-                        current = ""
-                else:
-                    current = para
-
-        if current:
-            chunks.append(current)
-
-        # 处理重叠
-        if overlap > 0 and len(chunks) > 1:
-            overlapped = [chunks[0]]
-            for i in range(1, len(chunks)):
-                prev_tail = chunks[i - 1][-overlap:]
-                overlapped.append(prev_tail + " " + chunks[i])
-            return overlapped
-
-        return chunks
+        # 直接使用 wuwei 的 ingest（内部处理分块和嵌入）
+        chunks = await self.store.ingest(
+            text=text,
+            source=source or f"manual_{len(self.store._chunks)}",
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+        if tags:
+            for c in chunks:
+                c.metadata["tags"] = tags
+        self._save()
+        return len(chunks)
 
     async def search(self, query: str, top_k: int = 5) -> list[dict]:
         """搜索知识库。"""
-        results = await self.store.search(query, top_k=top_k)
+        results = await self.store.search(query, limit=top_k)
         return [
             {
-                "content": r.content,
+                "text": r.text,
                 "source": r.source,
-                "score": r.score,
+                "title": r.title or "",
                 "metadata": r.metadata,
             }
             for r in results
@@ -123,9 +78,52 @@ class OpsKnowledgeBase:
     def get_stats(self) -> dict[str, Any]:
         """获取知识库统计。"""
         return {
-            "total_chunks": len(self.store._chunks),
-            "sources": list(set(c.source for c in self.store._chunks if c.source)),
+            "total_chunks": len(self.store._chunks.values()),
+            "sources": list(set(c.source for c in self.store._chunks.values() if c.source)),
         }
+
+    def _load(self) -> None:
+        """从 JSONL 文件加载知识。"""
+        import json
+        import asyncio
+
+        if not self._store_path.exists():
+            return
+
+        for line in self._store_path.read_text(encoding="utf-8").strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+                chunk = KnowledgeChunk(
+                    id=data["id"],
+                    text=data["text"],
+                    source=data.get("source", ""),
+                    namespace=data.get("namespace", ""),
+                    title=data.get("title", ""),
+                    metadata=data.get("metadata", {}),
+                )
+                self.store._chunks[chunk.id] = chunk
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+    def _save(self) -> None:
+        """保存知识到 JSONL 文件。"""
+        import json
+
+        self._store_path.parent.mkdir(parents=True, exist_ok=True)
+        lines = []
+        for c in self.store._chunks.values():
+            lines.append(json.dumps({
+                "id": c.id,
+                "text": c.text,
+                "source": c.source,
+                "namespace": c.namespace,
+                "title": c.title or "",
+                "metadata": c.metadata,
+            }, ensure_ascii=False))
+        self._store_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def register_knowledge_tools(registry: Any, knowledge: OpsKnowledgeBase) -> None:

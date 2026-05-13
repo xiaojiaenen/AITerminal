@@ -33,6 +33,7 @@ class AuditEntry:
     reason: str = ""
     exit_code: int | None = None
     output: str = ""
+    stderr: str = ""
     alternative_used: str = ""
     duration_ms: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -84,6 +85,7 @@ class AuditLogger:
         risk_level: RiskLevel = RiskLevel.SAFE,
         exit_code: int | None = None,
         output: str = "",
+        stderr: str = "",
         duration_ms: int = 0,
         action: AuditAction = AuditAction.EXECUTED,
         **kwargs: Any,
@@ -96,7 +98,8 @@ class AuditLogger:
             risk_level=risk_level,
             target=target,
             exit_code=exit_code,
-            output=output[:1000],  # 截断过长输出
+            output=output[:2000],  # stdout 截断到 2000 字符
+            stderr=stderr[:2000],  # stderr 截断到 2000 字符
             duration_ms=duration_ms,
             **kwargs,
         )
