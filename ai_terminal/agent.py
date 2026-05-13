@@ -150,6 +150,20 @@ class AITerminalAgent:
             return result.content
         return str(result)
 
+    async def chat_stream(self, user_input: str):
+        """与 AI 对话（流式输出）。返回 AsyncIterator[str]，每个元素是一段文本增量。"""
+        agent = self._build_agent()
+        async for event in agent.stream_events(user_input):
+            if event.type == "text_delta":
+                content = event.data.get("content", "")
+                if content:
+                    yield content
+            elif event.type == "reasoning_delta":
+                # 跳过推理过程（可选：用 yield 显示思考过程）
+                pass
+            elif event.type == "run_end":
+                break
+
     async def generate_command(self, description: str) -> str:
         """让 AI 生成命令但不执行（用于混合模式）。"""
         from wuwei.agent.agent import Agent as WuAgent

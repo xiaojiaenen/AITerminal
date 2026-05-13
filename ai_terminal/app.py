@@ -167,11 +167,23 @@ class AITerminal:
             console.print("[dim]请使用 ! 前缀直接执行命令。[/dim]")
 
     async def handle_ai_chat(self, user_input: str) -> None:
-        """AI 对话模式。"""
+        """AI 对话模式（流式输出 + Markdown 渲染）。"""
         try:
+            from rich.markdown import Markdown
+            from rich.live import Live
+
             agent = self._get_agent()
-            response = await agent.chat(user_input)
-            console.print(f"\n{response}")
+            full_response = ""
+
+            # 流式输出
+            with Live(console=console, refresh_per_second=10) as live:
+                async for delta in agent.chat_stream(user_input):
+                    full_response += delta
+                    # 实时渲染 Markdown
+                    live.update(Markdown(full_response))
+
+            # 最终渲染一次确保完整
+            console.print()
         except Exception as e:
             console.print(f"\n[red]AI 调用失败: {e}[/red]")
             console.print("[dim]提示: 设置 OPENAI_API_KEY 环境变量，或使用 ! 前缀直接执行命令。[/dim]")

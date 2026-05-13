@@ -22,11 +22,12 @@ def _get_shell_command(command: str) -> tuple[str, bool]:
     """
     if _is_windows():
         # Windows: 检测 pwsh (PowerShell 7+) 是否可用，否则用 powershell
+        # 强制 UTF-8 输出避免中文乱码
         import shutil
         if shutil.which("pwsh"):
-            return f'pwsh -NoProfile -Command "{command}"', False
+            return f'pwsh -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; {command}"', False
         else:
-            return f'powershell -NoProfile -Command "{command}"', False
+            return f'powershell -NoProfile -Command "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; {command}"', False
     else:
         return command, True
 
